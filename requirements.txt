@@ -1,0 +1,40 @@
+# ==============================================================================
+# ScrapSetu — Python Dependencies (requirements.txt)
+# ==============================================================================
+
+# Core Web Framework & Data Validation
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+
+# Database & Geospatial (PostgreSQL + PostGIS)
+sqlalchemy>=2.0.28
+asyncpg>=0.29.0
+psycopg2-binary>=2.9.9
+geoalchemy2>=0.14.0
+shapely>=2.0.3
+alembic>=1.13.1
+
+# AWS SDK & Cloud Services (Bedrock, SageMaker, S3, SQS, EventBridge, IoT)
+boto3>=1.34.60
+botocore>=1.34.60
+awsiotsdk>=1.21.0
+
+# AI, Image Processing & HTTP Client
+pillow>=10.2.0
+numpy>=1.26.4
+httpx>=0.27.0
+
+# Security, Auth & Utilities
+python-dotenv>=1.0.1
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+python-multipart>=0.0.9
+
+# Testing, Linting & Quality Assurance (Development)
+pytest>=8.0.2
+pytest-asyncio>=0.23.5
+pytest-cov>=4.1.0
+ruff>=0.3.0
+mypy>=1.8.0
