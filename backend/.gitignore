@@ -1,0 +1,65 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# Type Checking & Linting
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Environment Variables & Secrets
+.env
+.env.*
+*.env
+
+# Local Databases & Storage
+*.db
+*.sqlite
+*.sqlite3
+
+# Local Datasets & ML Artifacts
+data/
+datasets/
+models/
+*.pt
+*.pth
+*.onnx
+*.pkl
+*.h5
+
+# Logs & Temporary Files
+*.log
+logs/
+tmp/
+temp/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Ensure .gitkeep is always tracked
+!.gitkeep
