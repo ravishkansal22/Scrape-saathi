@@ -76,7 +76,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
     // Render markers
     markers.forEach((m) => {
-      const markerColor = m.isBreached ? '#EF4444' : '#10B981';
+      const markerColor = m.isBreached ? '#EF4444' : '#2563EB';
       const customIcon = L.divIcon({
         className: 'custom-leaflet-pin',
         html: `<div style="
@@ -96,14 +96,23 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               background: rgba(239, 68, 68, 0.4);
               animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
             "></span>
-          ` : ''}
+          ` : `
+            <span style="
+              position: absolute;
+              width: 24px;
+              height: 24px;
+              border-radius: 50%;
+              background: rgba(37, 99, 235, 0.3);
+              animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+            "></span>
+          `}
           <div style="
             background: ${markerColor};
             width: 14px;
             height: 14px;
             border-radius: 50%;
             border: 2px solid #FFFFFF;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+            box-shadow: 0 2px 10px rgba(37,99,235,0.5);
             position: relative;
             z-index: 2;
           "></div>
@@ -114,10 +123,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
       const marker = L.marker([m.lat, m.lng], { icon: customIcon });
       marker.bindPopup(`
-        <div style="font-family: system-ui, -apple-system, sans-serif; color: #0F172A; padding: 4px 2px; min-width: 140px;">
+        <div style="font-family: 'Onest', system-ui, -apple-system, sans-serif; color: #0F172A; padding: 4px 2px; min-width: 140px;">
           <div style="font-weight: 700; font-size: 13px; margin-bottom: 2px;">${m.title}</div>
           ${m.subtitle ? `<div style="font-size: 11px; color: #475569; font-family: monospace;">${m.subtitle}</div>` : ''}
-          <div style="margin-top: 6px; font-size: 10px; font-weight: 600; text-transform: uppercase; color: ${m.isBreached ? '#DC2626' : '#059669'};">
+          <div style="margin-top: 6px; font-size: 10px; font-weight: 700; text-transform: uppercase; color: ${m.isBreached ? '#DC2626' : '#2563EB'};">
             ${m.isBreached ? 'Threshold Breached (>=80%)' : 'Normal Capacity'}
           </div>
         </div>
@@ -129,7 +138,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     if (polylineCoords.length > 1) {
       const latLngs = polylineCoords.map((c) => [c[0], c[1]] as [number, number]);
       const polyline = L.polyline(latLngs, {
-        color: '#10B981',
+        color: '#2563EB',
         weight: 4,
         opacity: 0.95,
         dashArray: '8, 8',

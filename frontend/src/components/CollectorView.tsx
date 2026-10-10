@@ -41,7 +41,7 @@ const PRESET_SCRAP_ITEMS = [
     name: 'Induction Motor (1.5 HP)',
     category: 'Small Appliances & Motors',
     tag: 'Arbitrage Opportunity',
-    tagColor: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
+    tagColor: 'text-blue-600 dark:text-blue-400 bg-blue-500/10 border-blue-500/30',
     icon: Zap,
     description: 'High-purity copper stator windings housed in cast iron shell. Prime candidate for mechanical separation.',
     spec: 'Est. 6.5 kg • +187% Margin',
@@ -204,8 +204,8 @@ export const CollectorView: React.FC = () => {
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-[var(--border-subtle)]">
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-mono uppercase tracking-wider text-blue-600 dark:text-blue-400 bg-blue-500/10 border border-blue-500/25 font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
               Yard Intake Station #04
             </span>
             <span className="text-[var(--text-muted)] opacity-40">•</span>
@@ -221,7 +221,7 @@ export const CollectorView: React.FC = () => {
 
         <div className="flex flex-wrap items-center gap-3 shrink-0">
           <label className="btn-ghost-dark text-xs cursor-pointer shadow-sm">
-            <UploadCloud className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <UploadCloud className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             <span>{customImage ? 'Change Custom Photo' : 'Upload Scrap Photo'}</span>
             <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
           </label>
@@ -262,17 +262,17 @@ export const CollectorView: React.FC = () => {
                 onClick={() => handleAnalyze(item.id)}
                 className={`p-4 rounded-xl text-left border transition-all surface-card surface-card-interactive cursor-pointer relative ${
                   isSelected
-                    ? 'border-emerald-500 ring-2 ring-emerald-500/20 bg-emerald-50/50 dark:bg-emerald-950/20 shadow-md'
-                    : 'border-[var(--border-subtle)] hover:border-emerald-500/40 hover:bg-[var(--bg-surface-hover)]'
+                    ? 'border-blue-500 ring-2 ring-blue-500/25 bg-blue-50/60 dark:bg-blue-950/30 shadow-md'
+                    : 'border-[var(--border-subtle)] hover:border-blue-500/40 hover:bg-[var(--bg-surface-hover)]'
                 }`}
               >
                 {isSelected && (
-                  <div className="absolute top-3 right-3 flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500 text-white text-[9px] font-bold font-mono tracking-wider shadow-sm">
+                  <div className="absolute top-3 right-3 flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-600 text-white text-[9px] font-bold font-mono tracking-wider shadow-sm">
                     <Check className="w-2.5 h-2.5" /> ACTIVE
                   </div>
                 )}
                 <div className="flex items-start justify-between gap-2 mb-3">
-                  <div className={`p-2.5 rounded-xl ${isSelected ? 'bg-emerald-500 text-white shadow-sm' : 'bg-[var(--bg-surface-subtle)] text-[var(--text-secondary)]'}`}>
+                  <div className={`p-2.5 rounded-xl ${isSelected ? 'bg-blue-600 text-white shadow-sm' : 'bg-[var(--bg-surface-subtle)] text-[var(--text-secondary)]'}`}>
                     <Icon className="w-4 h-4" />
                   </div>
                   {!isSelected && (
@@ -285,7 +285,7 @@ export const CollectorView: React.FC = () => {
                 <p className="text-[11px] text-[var(--text-muted)] mt-1.5 line-clamp-2 leading-relaxed">{item.description}</p>
                 <div className="mt-3 pt-2.5 border-t border-[var(--border-subtle)] flex items-center justify-between text-[10px] font-mono text-[var(--text-muted)]">
                   <span>{item.spec}</span>
-                  <ArrowRight className="w-3 h-3 text-emerald-500 opacity-60" />
+                  <ArrowRight className="w-3 h-3 text-blue-500 opacity-80" />
                 </div>
               </button>
             );
