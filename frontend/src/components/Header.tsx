@@ -1,27 +1,31 @@
 import React from 'react';
 import {
-  Layers,
-  Building2,
+  Store,
+  Factory,
+  History,
   Truck,
   Radio,
   Sun,
   Moon,
   TrendingUp,
+  User,
 } from 'lucide-react';
 
+export type NavTab = 'kabadiwala' | 'vendor' | 'recycler' | 'traceability' | 'municipal';
+
 interface HeaderProps {
-  activeTab: 'collector' | 'recycler' | 'municipal';
-  setActiveTab: (tab: 'collector' | 'recycler' | 'municipal') => void;
+  activeTab: NavTab;
+  setActiveTab: (tab: NavTab) => void;
   apiConnected: boolean;
-  theme: 'dark' | 'light';
-  toggleTheme: () => void;
+  theme?: 'dark' | 'light';
+  toggleTheme?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   setActiveTab,
   apiConnected,
-  theme,
+  theme = 'dark',
   toggleTheme,
 }) => {
   return (
@@ -40,54 +44,78 @@ export const Header: React.FC<HeaderProps> = ({
               ScrapSetu
             </span>
             <span className="hidden sm:inline-block text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 font-bold">
-              v1.2
+              v2.0
             </span>
           </div>
         </div>
 
         {/* Floating Pill Navigation Switcher */}
-        <nav className="flex items-center gap-1 bg-[var(--tab-nav-bg)] p-1 rounded-full border border-[var(--border-subtle)] transition-colors shadow-inner">
+        <nav className="flex items-center gap-1 bg-[var(--tab-nav-bg)] p-1 rounded-full border border-[var(--border-subtle)] transition-colors shadow-inner overflow-x-auto max-w-[60vw] lg:max-w-none">
           <button
-            onClick={() => setActiveTab('collector')}
-            className={`pill-btn text-xs cursor-pointer transition-all ${
-              activeTab === 'collector'
+            onClick={() => setActiveTab('kabadiwala')}
+            className={`pill-btn text-xs cursor-pointer transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'kabadiwala'
                 ? 'pill-btn-brand shadow-sm font-bold'
                 : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
             }`}
           >
-            <Layers className="w-3.5 h-3.5" />
-            <span>Yard Triage</span>
+            <User className="w-3.5 h-3.5" />
+            <span>01. Kabadiwala</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('vendor')}
+            className={`pill-btn text-xs cursor-pointer transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'vendor'
+                ? 'pill-btn-brand shadow-sm font-bold'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            <Store className="w-3.5 h-3.5" />
+            <span>02. Vendor Portal</span>
           </button>
 
           <button
             onClick={() => setActiveTab('recycler')}
-            className={`pill-btn text-xs cursor-pointer transition-all ${
+            className={`pill-btn text-xs cursor-pointer transition-all flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'recycler'
                 ? 'pill-btn-brand shadow-sm font-bold'
                 : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
             }`}
           >
-            <Building2 className="w-3.5 h-3.5" />
-            <span>Recycler Exchange</span>
+            <Factory className="w-3.5 h-3.5" />
+            <span>03. Recycler Portal</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('traceability')}
+            className={`pill-btn text-xs cursor-pointer transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === 'traceability'
+                ? 'pill-btn-brand shadow-sm font-bold'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+            }`}
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>04. Traceability</span>
           </button>
 
           <button
             onClick={() => setActiveTab('municipal')}
-            className={`pill-btn text-xs cursor-pointer transition-all ${
+            className={`pill-btn text-xs cursor-pointer transition-all flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === 'municipal'
                 ? 'pill-btn-brand shadow-sm font-bold'
                 : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
             }`}
           >
             <Truck className="w-3.5 h-3.5" />
-            <span>Fleet & Bins</span>
+            <span>05. Municipal Fleet</span>
           </button>
         </nav>
 
         {/* Right Status Controls */}
         <div className="flex items-center gap-2.5 shrink-0">
           {/* Live Spot Mandi Price Quick Pill */}
-          <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bg-surface-subtle)] border border-[var(--border-subtle)] text-[11px] font-mono">
+          <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bg-surface-subtle)] border border-[var(--border-subtle)] text-[11px] font-mono">
             <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
             <span className="text-[var(--text-muted)]">Cu Spot:</span>
             <span className="font-bold text-[var(--text-primary)]">₹722/kg</span>
@@ -98,25 +126,27 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Backend Status Dot */}
           <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-[var(--bg-surface-subtle)] border border-[var(--border-subtle)] text-[11px] font-mono">
-            <Radio className={`w-3 h-3 ${apiConnected ? 'text-blue-500 animate-pulse' : 'text-slate-400'}`} />
+            <Radio className={`w-3 h-3 ${apiConnected ? 'text-emerald-500 animate-pulse' : 'text-slate-400'}`} />
             <span className="text-[var(--text-secondary)]">
               {apiConnected ? 'FastAPI :8000' : 'Offline'}
             </span>
           </div>
 
           {/* Theme Switcher Button */}
-          <button
-            onClick={toggleTheme}
-            className="flex items-center justify-center w-8 h-8 rounded-full bg-[var(--bg-surface-subtle)] border border-[var(--border-medium)] text-[var(--text-primary)] hover:border-blue-500/50 hover:bg-[var(--bg-surface-hover)] transition-all cursor-pointer shadow-sm"
-            title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
-            aria-label="Toggle theme"
-          >
-            {theme === 'dark' ? (
-              <Sun className="w-4 h-4 text-amber-400" />
-            ) : (
-              <Moon className="w-4 h-4 text-blue-500" />
-            )}
-          </button>
+          {toggleTheme && (
+            <button
+              onClick={toggleTheme}
+              className="flex items-center justify-center w-8 h-8 rounded-full bg-[var(--bg-surface-subtle)] border border-[var(--border-medium)] text-[var(--text-primary)] hover:border-blue-500/50 hover:bg-[var(--bg-surface-hover)] transition-all cursor-pointer shadow-sm"
+              title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+              aria-label="Toggle theme"
+            >
+              {theme === 'dark' ? (
+                <Sun className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Moon className="w-4 h-4 text-blue-500" />
+              )}
+            </button>
+          )}
         </div>
       </div>
     </header>

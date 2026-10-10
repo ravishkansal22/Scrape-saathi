@@ -1,46 +1,49 @@
+from typing import List
 from fastapi import APIRouter, HTTPException
 from app.schemas.handover import (
     DigitalWasteLot,
     DigitalWasteLotCreate,
     HandoverQRGenerateRequest,
     HandoverQRGenerateResponse,
-    HandoverVerifyRequest,
-    EPRReceiptResponse,
+    QRVerificationResult,
 )
 from app.services.handover import handover_service
 
-router = APIRouter(prefix="/api/v1", tags=["Digital Waste Lots & Dual-Key Handover"])
+router = APIRouter(prefix="/api/v1", tags=["Digital Waste Lots & Handover QR"])
 
 @router.post("/lots/create", response_model=DigitalWasteLot)
-def create_digital_waste_lot(req: DigitalWasteLotCreate):
-    """Creates a digital waste lot token with spatial recycler permit matching."""
+def create_waste_lot(req: DigitalWasteLotCreate):
+    """Creates a new digital waste lot with physical scale measured weight or item count."""
     try:
         return handover_service.create_lot(req)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lot Creation Error: {str(e)}")
 
+@router.get("/lots", response_model=List[DigitalWasteLot])
+def get_all_lots():
+    """Returns all active digital waste lots in the registry."""
+    return handover_service.get_all_lots()
+
 @router.get("/lots/{lot_id}", response_model=DigitalWasteLot)
-def get_digital_waste_lot(lot_id: str):
-    """Retrieves digital waste lot details by UUID."""
-    try:
-        return handover_service.get_lot(lot_id)
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Lot Not Found: {str(e)}")
+def get_waste_lot_by_id(lot_id: str):
+    """Retrieves a specific digital waste lot by UUID."""
+    lot = handover_service.get_lot_by_id(lot_id)
+    if not lot:
+        raise HTTPException(status_code=404, detail=f"Lot {lot_id} not found.")
+    return lot
 
 @router.post("/handover/generate-qr", response_model=HandoverQRGenerateResponse)
 def generate_handover_qr_code(req: HandoverQRGenerateRequest):
-    """Generates a cryptographically signed dynamic QR code payload for collector handover."""
+    """Generates an HMAC-SHA256 signed dynamic QR code for material handover."""
     try:
-        return handover_service.generate_handover_qr(req.lot_id, req.collector_id)
+        return handover_service.generate_handover_qr(req.lot_id, req.sender_id, req.sender_role)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"QR Generation Error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"QR Generation Error: {str(e)}")
 
-@router.post("/handover/verify", response_model=EPRReceiptResponse)
-def verify_dual_key_handover(req: HandoverVerifyRequest):
-    """Scans and verifies signed QR token, updates lot status to RECEIVED, and issues EPR compliance receipt."""
+@router.post("/handover/verify-qr", response_model=QRVerificationResult)
+def verify_handover_qr_code(qr_token: str):
+    """Verifies HMAC signature, timestamp validity, and retrieves waste lot details."""
     try:
-        return handover_service.verify_handover(
-            req.qr_token, req.recycler_id, req.scanned_latitude, req.scanned_longitude
-        )
+        return handover_service.verify_qr_token(qr_token)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Verification Failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"QR Verification Failed: {str(e)}")
