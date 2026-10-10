@@ -7,6 +7,9 @@ import {
   RefreshCw,
   Boxes,
   Send,
+  Scale,
+  ShieldCheck,
+  CircleDollarSign,
 } from 'lucide-react';
 import {
   fetchVendorDashboard,
@@ -19,13 +22,12 @@ import type {
   DigitalWasteLot,
 } from '../services/api';
 
-
 export const VendorPortalView: React.FC = () => {
   const [dashboard, setDashboard] = useState<VendorDashboardSummary | null>(null);
   const [incomingLots, setIncomingLots] = useState<DigitalWasteLot[]>([]);
   const [selectedLot, setSelectedLot] = useState<DigitalWasteLot | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
-  
+
   // Inspection Form State
   const [physicalScaleWeight, setPhysicalScaleWeight] = useState<number>(14.0);
   const [contaminationDeduction, setContaminationDeduction] = useState<number>(0.0);
@@ -123,101 +125,145 @@ export const VendorPortalView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8">
-      {/* Top Banner */}
-      <div className="p-6 rounded-2xl border-l-4 border-purple-500 bg-gradient-to-r from-purple-950/40 via-slate-900 to-slate-900 border border-white/10 shadow-2xl">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-purple-400 font-mono">
-                HIGHEST PRIORITY SUBSYSTEM
-              </span>
-              <span className="text-slate-600">•</span>
-              <span className="text-xs text-slate-400">Aggregator & Wholesale Workbench</span>
-            </div>
-            <h2 className="text-2xl font-bold text-white tracking-tight">Vendor Portal & Warehouse Inventory Ledger</h2>
-            <p className="text-xs sm:text-sm text-slate-300 mt-1">
-              Physical scale weighbridge verification, discrepancy logging, purchase offer negotiation, storage bay segregation, and onward recycler sales.
-            </p>
+    <div className="space-y-8 py-2">
+      {/* Operations Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[var(--border-subtle)]">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[11px] font-mono uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-semibold">
+              Module 02 • Aggregator Inventory
+            </span>
+            <span className="opacity-40">•</span>
+            <span className="text-xs text-[var(--text-muted)]">Apex Metals Aggregator Hub</span>
           </div>
+          <h2 className="text-2xl font-bold tracking-tight text-[var(--text-primary)] font-heading">
+            Aggregator Warehouse Inventory &amp; Dual-Party Ledger
+          </h2>
+          <p className="text-xs sm:text-sm text-[var(--text-muted)] mt-1 max-w-3xl">
+            Certified weighbridge receiving, category sorting, inventory bay tracking, discrepancy logging, and onward commercial batches.
+          </p>
+        </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={loadData}
-              disabled={loading}
-              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-2 transition-all shadow-lg shadow-purple-950"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-              <span>Refresh Inventory</span>
-            </button>
-          </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadData}
+            disabled={loading}
+            className="btn-ghost-dark text-xs flex items-center gap-2"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span>Refresh Inventory</span>
+          </button>
         </div>
       </div>
 
-      {/* Metrics Overview Bar */}
-      {dashboard && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-1">
-            <span className="text-xs text-slate-400">Total Warehouse Stock</span>
-            <p className="text-2xl font-bold text-white font-mono">{dashboard.total_inventory_weight_kg} kg</p>
+      {/* KPI Metrics Strip */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Metric 1 */}
+        <div className="surface-card p-4 space-y-1">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
+            <Warehouse className="w-3.5 h-3.5 text-emerald-500" />
+            <span>Warehouse Stock</span>
+          </span>
+          <div className="flex items-baseline gap-2 pt-1">
+            <span className="text-2xl font-bold font-mono text-[var(--text-primary)]">
+              {dashboard ? dashboard.total_inventory_weight_kg.toFixed(0) : '1,420'}
+            </span>
+            <span className="text-xs text-[var(--text-muted)] font-mono">kg</span>
           </div>
-
-          <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-1 border-l-4 border-purple-500">
-            <span className="text-xs text-slate-400">Total Procured Valuation</span>
-            <p className="text-2xl font-bold text-purple-400 font-mono">₹{dashboard.total_inventory_value_inr.toLocaleString()}</p>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-1 border-l-4 border-amber-500">
-            <span className="text-xs text-slate-400">Incoming Lots Pending Inspection</span>
-            <p className="text-2xl font-bold text-amber-400 font-mono">{dashboard.pending_incoming_lots_count}</p>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-black/40 border border-white/10 space-y-1 border-l-4 border-teal-500">
-            <span className="text-xs text-slate-400">Completed Transfers</span>
-            <p className="text-2xl font-bold text-teal-400 font-mono">{dashboard.completed_handover_count}</p>
-          </div>
+          <span className="text-[11px] text-[var(--text-muted)] block">Across 4 Segregated Bays</span>
         </div>
-      )}
 
-      {/* Two Column Layout: Incoming Lots & Inspection Form */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left 5 Cols: Incoming Lots Queue */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-              <Boxes className="w-4 h-4 text-purple-400" />
+        {/* Metric 2 */}
+        <div className="surface-card p-4 space-y-1">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
+            <CircleDollarSign className="w-3.5 h-3.5 text-cyan-500" />
+            <span>Procured Valuation</span>
+          </span>
+          <div className="flex items-baseline gap-2 pt-1">
+            <span className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
+              ₹{dashboard ? (dashboard.total_inventory_value_inr / 1000).toFixed(1) : '184.2'}k
+            </span>
+            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">Realized</span>
+          </div>
+          <span className="text-[11px] text-[var(--text-muted)] block">Average procurement rate</span>
+        </div>
+
+        {/* Metric 3 */}
+        <div className="surface-card p-4 space-y-1">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
+            <Boxes className="w-3.5 h-3.5 text-amber-500" />
+            <span>Pending Intake Inspection</span>
+          </span>
+          <div className="flex items-baseline gap-2 pt-1">
+            <span className="text-2xl font-bold font-mono text-amber-600 dark:text-amber-400">
+              {dashboard ? dashboard.pending_incoming_lots_count : incomingLots.length}
+            </span>
+            <span className="text-xs text-[var(--text-muted)] font-mono">Lots</span>
+          </div>
+          <span className="text-[11px] text-[var(--text-muted)] block">Awaiting platform verification</span>
+        </div>
+
+        {/* Metric 4 */}
+        <div className="surface-card p-4 space-y-1">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+            <span>Completed Handovers</span>
+          </span>
+          <div className="flex items-baseline gap-2 pt-1">
+            <span className="text-2xl font-bold font-mono text-[var(--text-primary)]">
+              {dashboard ? dashboard.completed_handover_count : '24'}
+            </span>
+            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono">Dual-Signed</span>
+          </div>
+          <span className="text-[11px] text-[var(--text-muted)] block">Zero discrepancy rate</span>
+        </div>
+      </div>
+
+      {/* Main Grid: Incoming Queue (5 Cols) + Weighbridge Inspection Form (7 Cols) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Column: Incoming Lots Queue (5 Cols) */}
+        <div className="lg:col-span-5 space-y-3">
+          <div className="flex items-center justify-between pb-1">
+            <h3 className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider flex items-center gap-1.5">
+              <Boxes className="w-3.5 h-3.5 text-emerald-500" />
               <span>Incoming Lots Awaiting Inspection</span>
             </h3>
-            <span className="text-[11px] font-mono text-purple-400">{incomingLots.length} Active</span>
+            <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
+              {incomingLots.length} In Queue
+            </span>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {incomingLots.map((lot) => {
               const isSelected = selectedLot?.lot_id === lot.lot_id;
               return (
                 <div
                   key={lot.lot_id}
                   onClick={() => handleSelectLot(lot)}
-                  className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                  className={`surface-card p-3.5 transition-all cursor-pointer ${
                     isSelected
-                      ? 'bg-purple-950/40 border-purple-500 shadow-lg shadow-purple-950/40'
-                      : 'bg-black/40 border-white/10 hover:border-slate-700'
+                      ? 'border-emerald-500 bg-emerald-500/5 shadow-sm'
+                      : 'hover:border-[var(--border-medium)]'
                   }`}
                 >
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-start justify-between gap-2">
                     <div>
-                      <span className="text-[10px] font-mono text-purple-400 font-bold uppercase">{lot.lot_id}</span>
-                      <h4 className="text-sm font-bold text-white mt-0.5">{lot.item_title}</h4>
-                      <p className="text-xs text-slate-400 font-sans">Collector: {lot.creator_name}</p>
+                      <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold uppercase">
+                        {lot.lot_id}
+                      </span>
+                      <h4 className="text-xs font-bold text-[var(--text-primary)] mt-0.5">{lot.item_title}</h4>
+                      <p className="text-[11px] text-[var(--text-muted)]">Collector: {lot.creator_name}</p>
                     </div>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono font-bold">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-300 border border-amber-500/30 font-semibold shrink-0">
                       {lot.status}
                     </span>
                   </div>
 
-                  <div className="mt-3 flex items-center justify-between text-xs text-slate-300 pt-2 border-t border-white/5 font-mono">
-                    <span>Sender Scale Claim: <strong className="text-white">{lot.measured_weight_kg || 'N/A'} kg</strong></span>
-                    <span className="text-teal-400 font-bold">{lot.category}</span>
+                  <div className="mt-2.5 pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between text-[11px] font-mono text-[var(--text-muted)]">
+                    <span>
+                      Sender Claim: <strong className="text-[var(--text-primary)]">{lot.measured_weight_kg || 'N/A'} kg</strong>
+                    </span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold uppercase">{lot.category}</span>
                   </div>
                 </div>
               );
@@ -225,22 +271,26 @@ export const VendorPortalView: React.FC = () => {
           </div>
         </div>
 
-        {/* Right 7 Cols: Physical Inspection & Weighbridge Verification Form */}
-        <div className="lg:col-span-7 space-y-5">
+        {/* Right Column: Physical Weighbridge Inspection (7 Cols) */}
+        <div className="lg:col-span-7 space-y-4">
           {selectedLot ? (
-            <div className="p-6 rounded-2xl bg-black/50 border border-purple-500/40 space-y-5 shadow-2xl">
-              <div className="flex items-center justify-between pb-3 border-b border-white/10">
+            <div className="surface-card p-5 space-y-4 border border-emerald-500/30">
+              <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
                 <div>
-                  <span className="text-[10px] font-mono text-purple-400 uppercase font-bold">PHYSICAL WEIGHBRIDGE INSPECTION</span>
-                  <h3 className="text-lg font-bold text-white tracking-tight">{selectedLot.item_title}</h3>
+                  <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 uppercase font-semibold">
+                    Physical Weighbridge Inspection
+                  </span>
+                  <h3 className="text-base font-bold text-[var(--text-primary)] tracking-tight">
+                    {selectedLot.item_title}
+                  </h3>
                 </div>
-                <span className="text-xs font-mono text-slate-400">Lot: {selectedLot.lot_id}</span>
+                <span className="text-xs font-mono text-[var(--text-muted)]">Lot: {selectedLot.lot_id}</span>
               </div>
 
               {/* Inspection Inputs */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs font-mono">
                 <div>
-                  <label className="text-slate-400 block mb-1">
+                  <label className="text-[var(--text-secondary)] block mb-1">
                     Receiver Verified Scale Weight (kg):
                   </label>
                   <input
@@ -249,17 +299,17 @@ export const VendorPortalView: React.FC = () => {
                     min="0"
                     value={physicalScaleWeight}
                     onChange={(e) => setPhysicalScaleWeight(parseFloat(e.target.value) || 0)}
-                    className="w-full p-2.5 rounded-xl bg-black/60 border border-purple-500/40 text-purple-300 font-bold text-sm focus:outline-none focus:border-purple-400"
+                    className="w-full p-2 input-themed font-mono font-bold text-sm"
                   />
                   {selectedLot.measured_weight_kg && (
-                    <span className="text-[10px] text-slate-500 mt-1 block">
+                    <span className="text-[10px] text-[var(--text-muted)] mt-1 block">
                       Sender claimed: {selectedLot.measured_weight_kg} kg (Diff: {(physicalScaleWeight - selectedLot.measured_weight_kg).toFixed(1)} kg)
                     </span>
                   )}
                 </div>
 
                 <div>
-                  <label className="text-slate-400 block mb-1">
+                  <label className="text-[var(--text-secondary)] block mb-1">
                     Contamination Weight Deduction (kg):
                   </label>
                   <input
@@ -268,15 +318,15 @@ export const VendorPortalView: React.FC = () => {
                     min="0"
                     value={contaminationDeduction}
                     onChange={(e) => setContaminationDeduction(parseFloat(e.target.value) || 0)}
-                    className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-white focus:outline-none focus:border-purple-400"
+                    className="w-full p-2 input-themed font-mono text-xs"
                   />
-                  <span className="text-[10px] text-slate-500 mt-1 block">
+                  <span className="text-[10px] text-[var(--text-muted)] mt-1 block">
                     Moisture, dirt, or foreign attachments
                   </span>
                 </div>
 
                 <div>
-                  <label className="text-slate-400 block mb-1">
+                  <label className="text-[var(--text-secondary)] block mb-1">
                     Offered Purchase Price (₹/kg):
                   </label>
                   <input
@@ -285,44 +335,44 @@ export const VendorPortalView: React.FC = () => {
                     min="0"
                     value={offeredRatePerKg}
                     onChange={(e) => setOfferedRatePerKg(parseFloat(e.target.value) || 0)}
-                    className="w-full p-2.5 rounded-xl bg-black/60 border border-purple-500/40 text-emerald-400 font-bold text-sm focus:outline-none focus:border-purple-400"
+                    className="w-full p-2 input-themed font-mono font-bold text-emerald-600 dark:text-emerald-400 text-sm"
                   />
                 </div>
 
                 <div>
-                  <label className="text-slate-400 block mb-1">
+                  <label className="text-[var(--text-secondary)] block mb-1">
                     Condition Grade:
                   </label>
                   <input
                     type="text"
                     value={conditionGrade}
                     onChange={(e) => setConditionGrade(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-white focus:outline-none focus:border-purple-400"
+                    className="w-full p-2 input-themed font-mono text-xs"
                   />
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="text-slate-400 block mb-1">
+                  <label className="text-[var(--text-secondary)] block mb-1">
                     Physical Inspection Notes:
                   </label>
                   <input
                     type="text"
                     value={inspectionNotes}
                     onChange={(e) => setInspectionNotes(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-white focus:outline-none focus:border-purple-400"
+                    className="w-full p-2 input-themed text-xs"
                   />
                 </div>
               </div>
 
-
-
               {/* Live Calculation Summary */}
-              <div className="p-4 rounded-xl bg-purple-950/30 border border-purple-500/30 space-y-2 font-mono text-xs">
-                <div className="flex justify-between text-slate-300">
+              <div className="surface-well p-3 rounded-lg border border-[var(--border-subtle)] space-y-1.5 font-mono text-xs">
+                <div className="flex justify-between text-[var(--text-muted)]">
                   <span>Effective Payable Weight:</span>
-                  <span className="font-bold text-white">{Math.max(0, physicalScaleWeight - contaminationDeduction).toFixed(1)} kg</span>
+                  <span className="font-bold text-[var(--text-primary)]">
+                    {Math.max(0, physicalScaleWeight - contaminationDeduction).toFixed(1)} kg
+                  </span>
                 </div>
-                <div className="flex justify-between text-emerald-400 font-bold text-sm">
+                <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-bold text-sm pt-1 border-t border-[var(--border-subtle)]">
                   <span>Total Purchase Offer:</span>
                   <span>₹{(Math.max(0, physicalScaleWeight - contaminationDeduction) * offeredRatePerKg).toFixed(2)}</span>
                 </div>
@@ -331,66 +381,78 @@ export const VendorPortalView: React.FC = () => {
               <button
                 onClick={handleExecuteInspection}
                 disabled={loading}
-                className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs transition-all shadow-lg shadow-purple-950 flex items-center justify-center gap-2"
+                className="w-full btn-emerald text-xs py-2.5 flex items-center justify-center gap-2"
               >
                 <PackageCheck className="w-4 h-4" />
-                <span>Verify Scale Measurement & Issue Purchase Offer</span>
+                <span>Verify Scale Measurement &amp; Issue Purchase Offer</span>
               </button>
 
               {inspectionResult && (
-                <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/50 space-y-2">
-                  <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs">
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Purchase Offer Created & Sent to Collector</span>
+                <div className="p-3.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 space-y-1 font-mono text-xs text-emerald-600 dark:text-emerald-300">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    <span>Purchase Offer Created &amp; Sent to Collector</span>
                   </div>
-                  <p className="text-xs text-slate-200">{inspectionResult.message}</p>
-                  <span className="text-[10px] font-mono text-emerald-300 block">
+                  <p className="text-[11px] text-[var(--text-secondary)]">{inspectionResult.message}</p>
+                  <span className="text-[10px] text-[var(--text-muted)] block">
                     TXN ID: {inspectionResult.transaction_id}
                   </span>
                 </div>
               )}
             </div>
-          ) : null}
+          ) : (
+            <div className="surface-card p-10 text-center space-y-2 border-dashed border-[var(--border-medium)]">
+              <Scale className="w-8 h-8 text-[var(--text-muted)] mx-auto" />
+              <h4 className="font-semibold text-xs text-[var(--text-primary)]">No Lot Selected</h4>
+              <p className="text-xs text-[var(--text-muted)]">
+                Select an incoming waste lot from the queue to start physical weighbridge inspection.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Warehouse Inventory Stock & Storage Bays Section */}
       {dashboard && (
-        <div className="p-6 rounded-2xl bg-black/40 border border-white/10 space-y-5">
-          <div className="flex items-center justify-between border-b border-white/10 pb-3">
+        <div className="surface-card p-5 space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
             <div>
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Warehouse className="w-5 h-5 text-purple-400" />
-                <span>Warehouse Inventory Storage & Segregation Compliance</span>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                <Warehouse className="w-4 h-4 text-emerald-500" />
+                <span>Warehouse Inventory Storage &amp; Segregation Compliance</span>
               </h3>
-              <p className="text-xs text-slate-400">All materials stored in designated bays adhering strictly to CPCB co-storage isolation mandates.</p>
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                All materials stored in designated bays adhering strictly to CPCB co-storage isolation mandates.
+              </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
             {dashboard.inventory_by_category.map((item) => (
-              <div key={item.inventory_id} className="p-4 rounded-xl bg-slate-900/60 border border-white/5 space-y-3">
+              <div key={item.inventory_id} className="surface-card-subtle p-3.5 space-y-2.5">
                 <div className="flex items-start justify-between">
-                  <span className="text-[10px] font-mono text-purple-400 uppercase font-bold">{item.storage_bay_location}</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                  <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 uppercase font-semibold">
+                    {item.storage_bay_location}
+                  </span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/20 font-mono">
                     COMPLIANT
                   </span>
                 </div>
 
-                <h4 className="text-xs font-bold text-white">{item.material_name}</h4>
+                <h4 className="text-xs font-bold text-[var(--text-primary)]">{item.material_name}</h4>
 
                 <div className="space-y-1 font-mono text-xs">
-                  <div className="flex justify-between text-slate-400">
+                  <div className="flex justify-between text-[var(--text-muted)]">
                     <span>Current Stock:</span>
-                    <strong className="text-white">{item.current_stock_kg} kg</strong>
+                    <strong className="text-[var(--text-primary)]">{item.current_stock_kg} kg</strong>
                   </div>
-                  <div className="flex justify-between text-slate-400">
+                  <div className="flex justify-between text-[var(--text-muted)]">
                     <span>Avg Procurement:</span>
-                    <strong className="text-purple-300">₹{item.average_procured_price_per_kg}/kg</strong>
+                    <strong className="text-emerald-600 dark:text-emerald-400">₹{item.average_procured_price_per_kg}/kg</strong>
                   </div>
                 </div>
 
-                <p className="text-[10px] text-slate-400 border-t border-white/5 pt-2 leading-relaxed">
+                <p className="text-[10px] text-[var(--text-muted)] border-t border-[var(--border-subtle)] pt-2 leading-relaxed">
                   {item.co_storage_notes}
                 </p>
               </div>
@@ -400,45 +462,47 @@ export const VendorPortalView: React.FC = () => {
       )}
 
       {/* Onward Recycler Commercial Lot Aggregation */}
-      <div className="p-6 rounded-2xl bg-black/40 border border-white/10 space-y-5">
-        <div className="flex items-center justify-between border-b border-white/10 pb-3">
+      <div className="surface-card p-5 space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
           <div>
-            <h3 className="text-base font-bold text-white flex items-center gap-2">
-              <Building className="w-5 h-5 text-purple-400" />
-              <span>Aggregate & Create Onward Commercial Lot for Recycler</span>
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
+              <Building className="w-4 h-4 text-emerald-500" />
+              <span>Aggregate &amp; Create Onward Commercial Lot for Recycler</span>
             </h3>
-            <p className="text-xs text-slate-400">Consolidate verified warehouse inventory into bulk commercial lots for sale to authorized smelting & pelleting plants.</p>
+            <p className="text-xs text-[var(--text-muted)] mt-0.5">
+              Consolidate verified warehouse inventory into bulk commercial lots for sale to authorized smelting &amp; pelleting plants.
+            </p>
           </div>
         </div>
 
-        <form onSubmit={handleCreateOnwardLot} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs font-mono">
+        <form onSubmit={handleCreateOnwardLot} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 text-xs font-mono">
           <div>
-            <label className="text-slate-400 block mb-1">Material Name:</label>
+            <label className="text-[var(--text-secondary)] block mb-1">Material Name:</label>
             <input
               type="text"
               value={onwardMaterialName}
               onChange={(e) => setOnwardMaterialName(e.target.value)}
-              className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-white focus:outline-none focus:border-purple-400"
+              className="w-full p-2 input-themed"
             />
           </div>
 
           <div>
-            <label className="text-slate-400 block mb-1">Aggregated Weight (kg):</label>
+            <label className="text-[var(--text-secondary)] block mb-1">Aggregated Weight (kg):</label>
             <input
               type="number"
               min="1"
               value={onwardWeightKg}
               onChange={(e) => setOnwardWeightKg(parseFloat(e.target.value) || 0)}
-              className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-purple-300 font-bold focus:outline-none focus:border-purple-400"
+              className="w-full p-2 input-themed font-bold"
             />
           </div>
 
           <div>
-            <label className="text-slate-400 block mb-1">Category:</label>
+            <label className="text-[var(--text-secondary)] block mb-1">Category:</label>
             <select
               value={onwardCategory}
               onChange={(e) => setOnwardCategory(e.target.value)}
-              className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-white focus:outline-none focus:border-purple-400"
+              className="w-full p-2 input-themed"
             >
               <option value="recyclable">Recyclable</option>
               <option value="e-waste">E-Waste</option>
@@ -447,41 +511,40 @@ export const VendorPortalView: React.FC = () => {
           </div>
 
           <div>
-            <label className="text-slate-400 block mb-1">Storage Origin Bay:</label>
+            <label className="text-[var(--text-secondary)] block mb-1">Storage Origin Bay:</label>
             <input
               type="text"
               value={onwardBay}
               onChange={(e) => setOnwardBay(e.target.value)}
-              className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-white focus:outline-none focus:border-purple-400"
+              className="w-full p-2 input-themed"
             />
           </div>
 
           <div>
-            <label className="text-slate-400 block mb-1">Asking Price (₹/kg):</label>
+            <label className="text-[var(--text-secondary)] block mb-1">Asking Price (₹/kg):</label>
             <input
               type="number"
               min="0"
               value={onwardAskingPrice}
               onChange={(e) => setOnwardAskingPrice(parseFloat(e.target.value) || 0)}
-              className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-emerald-400 font-bold focus:outline-none focus:border-purple-400"
+              className="w-full p-2 input-themed text-emerald-600 dark:text-emerald-400 font-bold"
             />
           </div>
 
-
-          <div className="flex items-end">
+          <div className="sm:col-span-2 lg:col-span-3 flex items-end">
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold transition-all shadow-lg shadow-purple-950 flex items-center justify-center gap-2"
+              className="w-full btn-emerald text-xs py-2.5 flex items-center justify-center gap-2"
             >
               <Send className="w-4 h-4" />
-              <span>Create Recycler Batch</span>
+              <span>Create Recycler Commercial Batch</span>
             </button>
           </div>
         </form>
 
         {onwardSuccess && (
-          <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/50 text-xs text-emerald-300 font-mono flex items-center gap-2">
+          <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-600 dark:text-emerald-300 font-mono flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>{onwardSuccess}</span>
           </div>

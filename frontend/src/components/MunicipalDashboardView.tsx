@@ -72,7 +72,7 @@ export const MunicipalDashboardView: React.FC<MunicipalDashboardViewProps> = ({ 
   }));
 
   return (
-    <div className="space-y-8 py-6">
+    <div className="space-y-8 py-2">
       {/* Operations Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[var(--border-subtle)]">
         <div>
