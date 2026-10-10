@@ -1,0 +1,180 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Space Grotesk', -apple-system, sans-serif;
+    --font-sans: 'Plus Jakarta Sans', -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  body {
+    background-color: #080914;
+    color: #f1f5f9;
+    font-family: var(--font-sans);
+    background-image: 
+      radial-gradient(circle at 50% -10%, rgba(124, 58, 237, 0.28), transparent 50%),
+      radial-gradient(circle at 80% 60%, rgba(168, 85, 247, 0.15), transparent 60%),
+      linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+    background-attachment: fixed;
+    overflow-x: hidden;
+  }
+}
+
+/* Ambient Floating Glow Sphere */
+.ambient-glow-sphere {
+  position: absolute;
+  top: 5%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 600px;
+  height: 350px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.25) 0%, rgba(124, 58, 237, 0.1) 50%, transparent 70%);
+  filter: blur(60px);
+  pointer-events: none;
+  animation: ambientFloat 8s ease-in-out infinite alternate;
+  z-index: 0;
+}
+
+@keyframes ambientFloat {
+  0% {
+    transform: translateX(-50%) translateY(0px) scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: translateX(-48%) translateY(20px) scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-52%) translateY(-10px) scale(0.95);
+    opacity: 0.85;
+  }
+}
+
+/* Scanline Radar Sweep */
+.scanline-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.scanline-container::after {
+  content: '';
+  position: absolute;
+  top: -100%;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(168, 85, 247, 0.08) 50%,
+    transparent 100%
+  );
+  animation: scanlineSweep 4s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes scanlineSweep {
+  0% {
+    top: -100%;
+  }
+  100% {
+    top: 200%;
+  }
+}
+
+/* Dribbble Aturecode Glass Cards */
+.dribbble-glass-card {
+  background: rgba(16, 18, 35, 0.78);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 1.5rem;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.75);
+}
+
+.dribbble-glass-card-hover {
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dribbble-glass-card-hover:hover {
+  border-color: rgba(168, 85, 247, 0.45);
+  box-shadow: 0 30px 80px -15px rgba(124, 58, 237, 0.3);
+  transform: translateY(-4px) scale(1.01);
+}
+
+/* Dribbble Pill Buttons */
+.pill-btn-purple {
+  background: linear-gradient(135deg, #7c3aed 0%, #a855f7 100%);
+  color: #ffffff;
+  font-weight: 600;
+  border-radius: 9999px;
+  padding: 0.625rem 1.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 0 25px rgba(124, 58, 237, 0.45);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.pill-btn-purple:hover {
+  box-shadow: 0 0 40px rgba(168, 85, 247, 0.75);
+  transform: translateY(-2px) scale(1.03);
+  filter: brightness(1.15);
+}
+
+.pill-btn-dark {
+  background: rgba(255, 255, 255, 0.05);
+  color: #e2e8f0;
+  font-weight: 500;
+  border-radius: 9999px;
+  padding: 0.625rem 1.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.pill-btn-dark:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  transform: translateY(-2px);
+}
+
+/* Pop-in Modal Animation */
+.animate-pop-in {
+  animation: popIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92) translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Pill status badges */
+.pill-badge {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  padding: 0.35rem 1rem;
+  font-size: 0.75rem;
+  color: #cbd5e1;
+  transition: border-color 0.3s ease;
+}
+.pill-badge:hover {
+  border-color: rgba(168, 85, 247, 0.5);
+}
+
+/* Glowing text highlight */
+.glow-text-purple {
+  text-shadow: 0 0 30px rgba(168, 85, 247, 0.6);
+}
