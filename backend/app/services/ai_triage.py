@@ -1,7 +1,11 @@
 import json
 import logging
 from typing import Dict, Any, List, Optional
-import boto3
+try:
+    import boto3
+except ImportError:
+    boto3 = None
+
 from app.config import settings
 from app.schemas.triage import (
     ConfidenceTier,

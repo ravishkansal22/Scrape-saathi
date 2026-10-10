@@ -1,7 +1,12 @@
 import math
 from typing import List
-import numpy as np
-from scipy.spatial.distance import cdist
+try:
+    import numpy as np
+    from scipy.spatial.distance import cdist
+except ImportError:
+    np = None
+    cdist = None
+
 from app.schemas.fleet import SmartBin, CVRPRouteResponse, CVRPRouteWaypoint
 
 def haversine_dist(coord1, coord2):
