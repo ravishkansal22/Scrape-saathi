@@ -2,26 +2,42 @@ from enum import Enum
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
-class ConfidenceTier(str, Enum):
-    HIGH = "HIGH"         # >= 0.85 Autonomous classification
-    MEDIUM = "MEDIUM"     # 0.60 - 0.84 Interactive user prompt required
-    LOW = "LOW"           # < 0.60 Physical depot holding / manual inspection
+class WasteCategory(str, Enum):
+    BIODEGRADABLE = "biodegradable"
+    RECYCLABLE = "recyclable"
+    REUSABLE = "reusable"
+    E_WASTE = "e-waste"
+    HAZARDOUS = "hazardous"
+    MIXED = "mixed"
+    UNKNOWN = "unknown"
 
-class SubComponent(BaseModel):
-    name: str = Field(..., description="Sub-component material (e.g. Copper Windings, Aluminum Casing, ABS Plastic)")
-    estimated_weight_kg: float = Field(..., description="Estimated weight of sub-material in kg")
-    index_price_per_kg: float = Field(..., description="Current commodity index market price in ₹/kg")
-    purity_factor: float = Field(..., ge=0.0, le=1.0, description="Purity / condition degradation factor Q_i (0.0 to 1.0)")
-    disassembly_ease: str = Field(default="Medium", description="Ease of extraction: Easy, Medium, Hard")
+class ConfidenceTier(str, Enum):
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+
+class MaterialComponent(BaseModel):
+    name: str
+    material_type: str
+    purity_grade: Optional[str] = "Standard"
+    recyclable: bool = True
+    notes: Optional[str] = None
 
 class HazardMarkers(BaseModel):
     is_hazardous: bool = False
-    battery_swollen: bool = False
-    thermal_venting: bool = False
-    puncture_detected: bool = False
+    battery_damage: bool = False
     chemical_leak: bool = False
+    exposed_wiring: bool = False
+    pressurized_canister: bool = False
+    sharp_edges: bool = False
     hazard_description: Optional[str] = None
     containment_protocol: Optional[str] = None
+
+class SegregationGuidance(BaseModel):
+    compatible_materials: List[str] = Field(default_factory=list, description="Materials that can be stored/transported together")
+    incompatible_materials: List[str] = Field(default_factory=list, description="Materials that must strictly remain separate")
+    segregation_reasoning: str
+    safe_storage_instructions: str
 
 class ClarificationOption(BaseModel):
     option_id: str
@@ -34,25 +50,29 @@ class ClarificationPrompt(BaseModel):
     options: List[ClarificationOption]
 
 class TriageAnalysisRequest(BaseModel):
+    sample_item_id: Optional[str] = None
     image_base64: Optional[str] = None
     image_url: Optional[str] = None
-    sample_item_id: Optional[str] = None  # E.g. 'electric_motor', 'swollen_laptop', 'copper_cable', 'mixed_e_waste'
-    user_latitude: Optional[float] = 28.6139
-    user_longitude: Optional[float] = 77.2090
+    collector_notes: Optional[str] = None
+
+class TriageAnalysisResponse(BaseModel):
+    item_title: str
+    category: WasteCategory
+    overall_confidence: float = Field(ge=0.0, le=1.0)
+    confidence_tier: ConfidenceTier
+    materials_detected: List[MaterialComponent] = Field(default_factory=list)
+    contamination_risk: str
+    recycling_potential: str
+    biodegradability_rating: str
+    recommended_pathway: str
+    segregation_guidance: SegregationGuidance
+    hazard_analysis: HazardMarkers
+    safe_handling_guidance: str
+    requires_manual_inspection: bool = False
+    manual_inspection_reason: Optional[str] = None
+    clarification_prompt: Optional[ClarificationPrompt] = None
 
 class TriageClarificationRequest(BaseModel):
     item_name: str
     selected_option_id: str
-    components: List[SubComponent]
-
-class TriageAnalysisResponse(BaseModel):
-    item_title: str
-    category: str
-    overall_confidence: float = Field(..., ge=0.0, le=1.0)
-    confidence_tier: ConfidenceTier
-    components: List[SubComponent]
-    hazard_analysis: HazardMarkers
-    clarification_prompt: Optional[ClarificationPrompt] = None
-    depot_inspection_required: bool = False
-    depot_reason: Optional[str] = None
-    recommended_pathway: str = Field(..., description="Reuse, Refurbish, Harvest for components, or Material Recovery")
+    category: WasteCategory

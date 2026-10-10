@@ -1,196 +1,382 @@
 import React, { useState, useEffect } from 'react';
-import { ShieldCheck, MapPin, Scan, Award, Download, Building2, Phone, Star } from 'lucide-react';
-import { fetchRecyclers, verifyHandover } from '../services/api';
-import type { RecyclerPermit, EPRReceiptResponse } from '../services/api';
+import {
+  ShieldCheck,
+  MapPin,
+  Award,
+  Building2,
+  Phone,
+  Star,
+  Scale,
+  Factory,
+} from 'lucide-react';
+
+import {
+  fetchRecyclers,
+  recyclerIntakeConfirm,
+  recyclerRecordOutcome,
+  fetchAllTransactions,
+} from '../services/api';
+import type {
+  RecyclerPermit,
+  Transaction,
+} from '../services/api';
 import confetti from 'canvas-confetti';
 
 export const RecyclerPortalView: React.FC = () => {
   const [recyclers, setRecyclers] = useState<RecyclerPermit[]>([]);
   const [selectedRecycler, setSelectedRecycler] = useState<RecyclerPermit | null>(null);
-  const [qrTokenInput, setQrTokenInput] = useState<string>('');
-  const [verifying, setVerifying] = useState<boolean>(false);
-  const [eprReceipt, setEprReceipt] = useState<EPRReceiptResponse | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [selectedTxnId, setSelectedTxnId] = useState<string>('TXN-9F8E7D6C');
+  
+  // Intake Form State
+  const [intakeWeightKg, setIntakeWeightKg] = useState<number>(85.0);
+  const [hasContamination, setHasContamination] = useState<boolean>(false);
+  const [contaminationKg, setContaminationKg] = useState<number>(0.0);
+  const [intakeNotes, setIntakeNotes] = useState<string>('Weighed on certified 500kg electronic platform scale.');
+  const [intakeResult, setIntakeResult] = useState<any | null>(null);
+
+  // Final Outcome Form State
+  const [treatmentOutcome, setTreatmentOutcome] = useState<string>('RECYCLED_RAW_MATERIAL');
+  const [recoveredWeightKg, setRecoveredWeightKg] = useState<number>(82.0);
+  const [recoveryYieldPct, setRecoveryYieldPct] = useState<number>(96.5);
+  const [treatmentMethod, setTreatmentMethod] = useState<string>('Hot-wash de-labeling, optical polymer flake sorting, extrusion into RPET pellets.');
+  const [downstreamDest, setDownstreamDest] = useState<string>('National Bottle-to-Bottle Food Grade Preform Manufacturer');
+  const [outcomeResult, setOutcomeResult] = useState<any | null>(null);
+
+  const [loading, setLoading] = useState<boolean>(false);
 
   useEffect(() => {
-    fetchRecyclers()
-      .then((data) => {
-        setRecyclers(data);
-        if (data.length > 0) setSelectedRecycler(data[0]);
+    Promise.all([fetchRecyclers(), fetchAllTransactions()])
+      .then(([recList, txnList]) => {
+        setRecyclers(recList);
+        if (recList.length > 0) setSelectedRecycler(recList[0]);
+        setTransactions(txnList);
+        if (txnList.length > 0) setSelectedTxnId(txnList[0].transaction_id);
       })
-      .catch((err) => console.error('Fetch recyclers error:', err));
+      .catch((err) => console.error('Error fetching recycler data:', err));
   }, []);
 
-  const handleScanVerify = async () => {
+  const handleConfirmIntake = async () => {
     if (!selectedRecycler) return;
-    setVerifying(true);
-    setEprReceipt(null);
-
-    const tokenToUse = qrTokenInput.trim();
-
+    setLoading(true);
+    setIntakeResult(null);
     try {
-      const res = await verifyHandover(tokenToUse, selectedRecycler.recycler_id);
-      setEprReceipt(res);
-      confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
+      const res = await recyclerIntakeConfirm({
+        transaction_id: selectedTxnId,
+        recycler_id: selectedRecycler.recycler_id,
+        measured_intake_weight_kg: intakeWeightKg,
+        has_contamination: hasContamination,
+        contamination_weight_deduction_kg: contaminationKg,
+        intake_notes: intakeNotes,
+        scanned_latitude: selectedRecycler.latitude,
+        scanned_longitude: selectedRecycler.longitude,
+      });
+      setIntakeResult(res);
+      confetti({ particleCount: 70, spread: 50, origin: { y: 0.6 } });
     } catch (err: any) {
-      alert(`Handover verification error: ${err.message}`);
+      alert(`Intake confirmation error: ${err.message}`);
     } finally {
-      setVerifying(false);
+      setLoading(false);
+    }
+  };
+
+  const handleRecordOutcome = async () => {
+    if (!selectedRecycler) return;
+    setLoading(true);
+    setOutcomeResult(null);
+    try {
+      const res = await recyclerRecordOutcome({
+        transaction_id: selectedTxnId,
+        recycler_id: selectedRecycler.recycler_id,
+        treatment_outcome: treatmentOutcome,
+        recovered_material_weight_kg: recoveredWeightKg,
+        recovery_yield_percentage: recoveryYieldPct,
+        treatment_method_details: treatmentMethod,
+        downstream_destination: downstreamDest,
+        epr_certificate_notes: 'Verified circular batch recovery under Plastic Waste Management Rules 2024.',
+      });
+      setOutcomeResult(res);
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.5 } });
+    } catch (err: any) {
+      alert(`Outcome record error: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="space-y-6">
-      {/* Hero Banner */}
-      <div className="glass-panel p-6 border-l-4 border-teal-500 bg-gradient-to-r from-teal-950/30 via-slate-900 to-slate-900">
+    <div className="space-y-8">
+      {/* Banner */}
+      <div className="p-6 rounded-2xl border-l-4 border-emerald-500 bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border border-white/10 shadow-2xl">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-semibold uppercase tracking-wider text-teal-400 font-mono">Module 3.3</span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400 font-mono">Module 03</span>
               <span className="text-slate-600">•</span>
-              <span className="text-xs text-slate-400">Authorized Recycler Workbench</span>
+              <span className="text-xs text-slate-400">Authorized Recycler Verification Workbench</span>
             </div>
-            <h2 className="text-2xl font-bold text-white tracking-tight">PostGIS Recycler Permit Matching & Dual-Key Verification</h2>
-            <p className="text-sm text-slate-300 mt-1">
-              Cryptographic QR verification, regulatory permit category spatial matching, and immutable EPR audit receipts.
+            <h2 className="text-2xl font-bold text-white tracking-tight">Recycler Intake & Circular Recovery Outcome Ledger</h2>
+            <p className="text-xs sm:text-sm text-slate-300 mt-1">
+              PostGIS spatial matching, certified weighbridge intake validation, discrepancy logging, and immutable EPR compliance certificate issuance.
             </p>
           </div>
 
-          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-teal-500/10 text-teal-300 border border-teal-500/30 text-xs font-semibold">
-            <ShieldCheck className="w-4 h-4 text-teal-400" />
-            <span>PostGIS ST_DWithin Active</span>
+          <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 text-xs font-semibold">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>DPCC/CPCB Accredited</span>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column: Registered Recycler Facilities */}
-        <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left 4 Cols: Certified Recyclers Spatial Matrix */}
+        <div className="lg:col-span-4 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Nearby Certified Recyclers</h3>
-            <span className="text-[11px] font-mono text-slate-400">PostGIS Matrix</span>
+            <span className="text-[11px] font-mono text-emerald-400">PostGIS Matrix</span>
           </div>
 
           <div className="space-y-3">
-            {recyclers.map((rec) => (
-              <div
-                key={rec.recycler_id}
-                onClick={() => setSelectedRecycler(rec)}
-                className={`p-4 rounded-xl glass-panel cursor-pointer transition-all glass-panel-hover ${
-                  selectedRecycler?.recycler_id === rec.recycler_id
-                    ? 'border-emerald-500 bg-emerald-950/30 glow-box-emerald'
-                    : 'hover:border-slate-700'
-                }`}
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                    <h4 className="font-bold text-white text-sm">{rec.name}</h4>
+            {recyclers.map((rec) => {
+              const isSelected = selectedRecycler?.recycler_id === rec.recycler_id;
+              return (
+                <div
+                  key={rec.recycler_id}
+                  onClick={() => setSelectedRecycler(rec)}
+                  className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-emerald-950/40 border-emerald-500 shadow-lg shadow-emerald-950/40'
+                      : 'bg-black/40 border-white/10 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <h4 className="font-bold text-white text-sm leading-snug">{rec.name}</h4>
+                    </div>
+                    <span className="text-xs font-bold text-amber-400 flex items-center gap-0.5">
+                      <Star className="w-3 h-3 fill-amber-400" />
+                      <span>{rec.rating}</span>
+                    </span>
                   </div>
-                  <span className="text-xs font-bold text-amber-400 flex items-center gap-0.5">
-                    <Star className="w-3 h-3 fill-amber-400" />
-                    <span>{rec.rating}</span>
-                  </span>
+
+                  <p className="text-xs text-slate-400 mt-1 pl-6">{rec.permit_category}</p>
+                  <span className="text-[10px] font-mono text-emerald-300 pl-6 block mt-0.5">{rec.permit_number}</span>
+
+                  <div className="mt-3 flex items-center justify-between text-xs text-slate-300 pt-2 border-t border-white/5 font-mono">
+                    <span className="flex items-center gap-1 text-slate-400">
+                      <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{rec.distance_km} km away</span>
+                    </span>
+                    <span className="text-emerald-400 text-[11px] flex items-center gap-1">
+                      <Phone className="w-3 h-3" />
+                      <span>{rec.contact_phone}</span>
+                    </span>
+                  </div>
                 </div>
-                <p className="text-xs text-slate-400 mt-1.5 pl-6">{rec.permit_category}</p>
-                <div className="mt-3 flex items-center justify-between text-xs text-slate-300 pt-2.5 border-t border-slate-800/80">
-                  <span className="flex items-center gap-1 text-slate-400">
-                    <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="font-mono">{rec.distance_km} km away</span>
-                  </span>
-                  <span className="text-emerald-400 font-mono text-[11px] flex items-center gap-1">
-                    <Phone className="w-3 h-3" />
-                    <span>{rec.contact_phone}</span>
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
-        {/* Right 2 Columns: Dual-Key Scanner & EPR Audit Certificate */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Dual Key Handover Scanner */}
-          <div className="glass-panel p-6 space-y-4 border-l-4 border-emerald-500">
-            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-              <Scan className="w-5 h-5 text-emerald-400" />
-              <span>Verify Dual-Key Cryptographic Handover</span>
-            </h3>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              Paste or scan the collector's time-sensitive signed QR token payload to verify the HMAC signature, update waste lot status to <span className="text-emerald-400 font-bold">RECEIVED</span>, and generate an immutable EPR record.
-            </p>
-
-            <div className="space-y-3">
-              <textarea
-                value={qrTokenInput}
-                onChange={(e) => setQrTokenInput(e.target.value)}
-                placeholder="Paste base64 signed QR token payload from Collector view..."
-                className="w-full h-24 p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-mono text-emerald-300 focus:outline-none focus:border-emerald-500 resize-none"
-              />
-              <button
-                onClick={handleScanVerify}
-                disabled={verifying}
-                className="w-full btn-emerald justify-center text-xs shadow-lg shadow-emerald-950"
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span>{verifying ? 'Verifying HMAC Signature...' : 'Verify Cryptographic Handover'}</span>
-              </button>
+        {/* Right 8 Cols: Intake Verification & Recovery Outcome Logging */}
+        <div className="lg:col-span-8 space-y-6">
+          {/* Section A: Intake Scale Verification */}
+          <div className="p-6 rounded-2xl bg-black/50 border border-emerald-500/40 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Scale className="w-5 h-5 text-emerald-400" />
+                <span>1. Recycler Weighbridge Intake & Discrepancy Verification</span>
+              </h3>
+              <span className="text-xs font-mono text-slate-400">Transaction Intake</span>
             </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
+              <div>
+                <label className="text-slate-400 block mb-1">Select Incoming Transaction:</label>
+                <select
+                  value={selectedTxnId}
+                  onChange={(e) => setSelectedTxnId(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-white focus:outline-none focus:border-emerald-400"
+                >
+                  {transactions.map((t) => (
+                    <option key={t.transaction_id} value={t.transaction_id}>
+                      {t.transaction_id} — {t.item_title} (₹{t.final_payable_amount})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">Recycler Measured Scale Intake (kg):</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={intakeWeightKg}
+                  onChange={(e) => setIntakeWeightKg(parseFloat(e.target.value) || 0)}
+                  className="w-full p-2.5 rounded-xl bg-black/60 border border-emerald-500/40 text-emerald-300 font-bold focus:outline-none focus:border-emerald-400"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">Contamination Weight Deduction (kg):</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={contaminationKg}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    setContaminationKg(val);
+                    setHasContamination(val > 0);
+                  }}
+                  className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-white focus:outline-none focus:border-emerald-400"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">Intake Inspection Notes:</label>
+                <input
+                  type="text"
+                  value={intakeNotes}
+                  onChange={(e) => setIntakeNotes(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-white focus:outline-none focus:border-emerald-400"
+                />
+              </div>
+            </div>
+
+            <button
+              onClick={handleConfirmIntake}
+              disabled={loading}
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-all shadow-lg shadow-emerald-950 flex items-center justify-center gap-2"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>Confirm Weighbridge Intake & Generate Intake Hash</span>
+            </button>
+
+            {intakeResult && (
+              <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/50 space-y-1 font-mono text-xs text-emerald-200">
+                <p className="font-bold">{intakeResult.message}</p>
+                <p className="text-[10px] text-slate-300">Intake Hash: {intakeResult.epr_intake_hash}</p>
+              </div>
+            )}
           </div>
 
-          {/* EPR Compliance Audit Certificate Receipt */}
-          {eprReceipt && (
-            <div className="glass-panel p-6 space-y-5 border-2 border-emerald-500/50 bg-gradient-to-b from-emerald-950/30 to-slate-900 shadow-2xl">
-              <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                    <Award className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-bold text-white">Extended Producer Responsibility (EPR) Certificate</h3>
-                    <p className="text-xs text-slate-400 font-mono">Digital Audit Receipt #{eprReceipt.receipt_id}</p>
-                  </div>
-                </div>
-                <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold font-mono uppercase tracking-wider">
-                  VERIFIED VALID
-                </span>
-              </div>
+          {/* Section B: Final Circular Treatment & Recovery Outcome Recording */}
+          <div className="p-6 rounded-2xl bg-black/50 border border-white/10 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <Factory className="w-5 h-5 text-emerald-400" />
+                <span>2. Record Final Physical Recovery & Circularity Outcome</span>
+              </h3>
+              <span className="text-xs font-mono text-slate-400">EPR Audit Certificate</span>
+            </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-                <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
-                  <span className="text-slate-400 block mb-1">Waste Lot UUID:</span>
-                  <span className="font-mono font-bold text-white">{eprReceipt.lot_id}</span>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
-                  <span className="text-slate-400 block mb-1">Verified Weight:</span>
-                  <span className="font-mono font-bold text-emerald-400">{eprReceipt.total_weight_kg} kg</span>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
-                  <span className="text-slate-400 block mb-1">Waste Category:</span>
-                  <span className="font-bold text-white">{eprReceipt.category}</span>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
-                  <span className="text-slate-400 block mb-1">Recycler Facility:</span>
-                  <span className="font-bold text-white truncate block">{eprReceipt.recycler_name}</span>
-                </div>
-              </div>
-
-              {/* Cryptographic Signature Record */}
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800/80 space-y-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider font-mono">HMAC-SHA256 Audit Signature</span>
-                <p className="text-xs font-mono text-emerald-400 break-all">{eprReceipt.digital_signature}</p>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  onClick={() => alert(`Downloading EPR Certificate PDF for Lot ${eprReceipt.lot_id}...`)}
-                  className="btn-emerald text-xs"
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-mono">
+              <div>
+                <label className="text-slate-400 block mb-1">Treatment Outcome:</label>
+                <select
+                  value={treatmentOutcome}
+                  onChange={(e) => setTreatmentOutcome(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-white focus:outline-none focus:border-emerald-400"
                 >
-                  <Download className="w-4 h-4" />
-                  <span>Download Verified EPR Audit PDF</span>
-                </button>
+                  <option value="RECYCLED_RAW_MATERIAL">RECYCLED_RAW_MATERIAL (Pellets / Ingots)</option>
+                  <option value="REFURBISHED_COMPONENTS">REFURBISHED_COMPONENTS (Tested for Reuse)</option>
+                  <option value="SAFE_CHEMICAL_NEUTRALIZATION">SAFE_CHEMICAL_NEUTRALIZATION (Hazmat)</option>
+                  <option value="ENERGY_RECOVERY">ENERGY_RECOVERY (Refuse Derived Fuel)</option>
+                  <option value="NON_RECOVERABLE_RESIDUE">NON_RECOVERABLE_RESIDUE (Inert Slag)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">Recovered Material Weight (kg):</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={recoveredWeightKg}
+                  onChange={(e) => setRecoveredWeightKg(parseFloat(e.target.value) || 0)}
+                  className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-emerald-300 font-bold focus:outline-none focus:border-emerald-400"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">Recovery Circularity Yield (%):</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="100"
+                  value={recoveryYieldPct}
+                  onChange={(e) => setRecoveryYieldPct(parseFloat(e.target.value) || 0)}
+                  className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-white focus:outline-none focus:border-emerald-400"
+                />
+              </div>
+
+              <div>
+                <label className="text-slate-400 block mb-1">Downstream Destination Facility:</label>
+                <input
+                  type="text"
+                  value={downstreamDest}
+                  onChange={(e) => setDownstreamDest(e.target.value)}
+                  className="w-full p-2.5 rounded-xl bg-black/60 border border-white/10 text-white focus:outline-none focus:border-emerald-400"
+                />
               </div>
             </div>
-          )}
+
+            <div>
+              <label className="text-slate-400 block mb-1 font-mono text-xs">Treatment & Transformation Method:</label>
+              <textarea
+                value={treatmentMethod}
+                onChange={(e) => setTreatmentMethod(e.target.value)}
+                className="w-full h-20 p-2.5 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-slate-200 focus:outline-none focus:border-emerald-400 resize-none"
+              />
+            </div>
+
+            <button
+              onClick={handleRecordOutcome}
+              disabled={loading}
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition-all shadow-lg shadow-emerald-950 flex items-center justify-center gap-2"
+            >
+              <Award className="w-4 h-4" />
+              <span>Record Final Outcome & Generate Cryptographic EPR Audit Certificate</span>
+            </button>
+
+            {outcomeResult && (
+              <div className="p-5 rounded-2xl bg-gradient-to-b from-emerald-950/60 to-slate-900 border-2 border-emerald-500/50 space-y-3 font-mono text-xs animate-pop-in">
+                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                  <div className="flex items-center gap-2 text-emerald-400 font-bold">
+                    <Award className="w-5 h-5" />
+                    <span>EPR EXTENDED PRODUCER RESPONSIBILITY CERTIFICATE</span>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                    VERIFIED VALID
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="p-2.5 rounded-lg bg-black/40 border border-white/5">
+                    <span className="text-slate-400 text-[10px] block">Outcome:</span>
+                    <strong className="text-white text-xs">{outcomeResult.treatment_outcome}</strong>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-black/40 border border-white/5">
+                    <span className="text-slate-400 text-[10px] block">Recovered Weight:</span>
+                    <strong className="text-emerald-400 text-xs">{outcomeResult.recovered_material_weight_kg} kg</strong>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-black/40 border border-white/5">
+                    <span className="text-slate-400 text-[10px] block">Recovery Yield:</span>
+                    <strong className="text-white text-xs">{outcomeResult.recovery_yield_percentage}</strong>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-black/60 border border-white/5 space-y-0.5">
+                  <span className="text-[10px] text-slate-500 block">SHA-256 Non-Repudiable Audit Signature:</span>
+                  <p className="text-[11px] text-emerald-400 break-all">{outcomeResult.epr_audit_hash}</p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
