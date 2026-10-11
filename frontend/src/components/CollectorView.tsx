@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import QRCode from 'qrcode';
 import {
   Sparkles,
@@ -29,6 +29,7 @@ import type {
   MaterialReferencePrice,
   ValuationCalculationResponse,
   HandoverQRGenerateResponse,
+  HazardMarkers,
 } from '../services/api';
 
 const PRESET_ITEMS = [
@@ -44,6 +45,9 @@ export const CollectorView: React.FC = () => {
   const [customImage, setCustomImage] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [triageResult, setTriageResult] = useState<TriageAnalysisResponse | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [reportedHazards, setReportedHazards] = useState<Partial<HazardMarkers>>({});
+  const analysisVersion = useRef(0);
 
   // Physical Scale Inputs (Strictly user-entered, NO AI weight estimation)
   const [measuredWeightKg, setMeasuredWeightKg] = useState<number>(12.5);
@@ -57,25 +61,32 @@ export const CollectorView: React.FC = () => {
 
   // Run Triage Analysis
   const handleAnalyze = async (presetId?: string, imageBase64?: string) => {
+    const version = ++analysisVersion.current;
     if (presetId) setSelectedPreset(presetId);
     setLoading(true);
+    setAnalysisError(null);
+    setTriageResult(null);
     setValuationResult(null);
     setQrResult(null);
 
     try {
-      const res = await analyzeTriage(presetId, imageBase64);
+      const res = await analyzeTriage(presetId, imageBase64, reportedHazards);
+      if (version !== analysisVersion.current) return;
       setTriageResult(res);
 
       // Compute initial valuation based on actual physical scale input
-      if (measuredWeightKg > 0 && res.materials_detected && res.materials_detected.length > 0) {
+      if (res.analysis_source === 'demo' && !res.requires_manual_inspection && measuredWeightKg > 0 && res.materials_detected.length > 0) {
         const primaryMaterial = res.materials_detected[0].name;
         const val = await calculateMeasuredValuation(primaryMaterial, res.category, measuredWeightKg, itemCount);
-        setValuationResult(val);
+        if (version === analysisVersion.current) setValuationResult(val);
       }
     } catch (err) {
-      console.error('Triage error:', err);
+      if (version === analysisVersion.current) {
+        setTriageResult(null);
+        setAnalysisError(err instanceof Error ? err.message : 'Analysis unavailable. Retry or request manual inspection.');
+      }
     } finally {
-      setLoading(false);
+      if (version === analysisVersion.current) setLoading(false);
     }
   };
 
@@ -86,6 +97,7 @@ export const CollectorView: React.FC = () => {
 
     // Initial analysis
     handleAnalyze('electric_motor');
+    return () => { analysisVersion.current += 1; };
   }, []);
 
   // Fallback QRCode generator if backend returns empty base64 string
@@ -103,7 +115,7 @@ export const CollectorView: React.FC = () => {
 
   // Recalculate valuation whenever user updates physical scale weight
   const handleRecalculateValuation = async () => {
-    if (!triageResult || !triageResult.materials_detected || triageResult.materials_detected.length === 0) return;
+    if (!triageResult || triageResult.requires_manual_inspection || triageResult.analysis_source !== 'demo' || triageResult.materials_detected.length === 0) return;
     try {
       const primaryMaterial = triageResult.materials_detected[0].name;
       const val = await calculateMeasuredValuation(primaryMaterial, triageResult.category, measuredWeightKg, itemCount);
@@ -115,12 +127,14 @@ export const CollectorView: React.FC = () => {
 
   // Submit clarification
   const handleClarify = async (optionId: string) => {
-    if (!triageResult) return;
+    if (!triageResult || triageResult.analysis_source !== 'demo' || triageResult.hazard_analysis.is_hazardous) return;
     setLoading(true);
     try {
       const res = await submitClarification(triageResult.item_title, optionId, triageResult.category);
       setTriageResult(res);
-      if (measuredWeightKg > 0 && res.materials_detected && res.materials_detected.length > 0) {
+      setValuationResult(null);
+      setQrResult(null);
+      if (!res.requires_manual_inspection && measuredWeightKg > 0 && res.materials_detected.length > 0) {
         const val = await calculateMeasuredValuation(res.materials_detected[0].name, res.category, measuredWeightKg, itemCount);
         setValuationResult(val);
       }
@@ -133,7 +147,7 @@ export const CollectorView: React.FC = () => {
 
   // Create Waste Lot & Generate QR
   const handleGenerateQR = async () => {
-    if (!triageResult) return;
+    if (!triageResult || triageResult.requires_manual_inspection) return;
     setLoading(true);
     try {
       const lot = await createWasteLot(
@@ -172,7 +186,7 @@ export const CollectorView: React.FC = () => {
             Scrap Intake Triage &amp; Physical Scale Valuation
           </h2>
           <p className="text-xs sm:text-sm text-[var(--text-muted)] mt-1 max-w-3xl">
-            Multimodal AI material assay, strict co-storage segregation protocols, recorded physical scale weights, and cryptographic handover tokens.
+            Visual material suggestions, hazard review, entered scale weights, and prototype handover records.
           </p>
         </div>
 
@@ -182,12 +196,30 @@ export const CollectorView: React.FC = () => {
             <span>Upload Photo</span>
             <input
               type="file"
-              accept="image/*"
+              aria-label="Upload scrap photo"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              disabled={loading}
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) {
+                  analysisVersion.current += 1;
+                  setTriageResult(null);
+                  setValuationResult(null);
+                  setQrResult(null);
+                  setCustomImage(null);
+                  if (file.size > 3_750_000) {
+                    setAnalysisError('Image must be at most 3.75 MB. Resize it and try again.');
+                    e.target.value = '';
+                    return;
+                  }
+                  setLoading(true);
+                  setAnalysisError(null);
                   const reader = new FileReader();
-                  reader.onloadend = () => {
+                  reader.onerror = () => {
+                    setLoading(false);
+                    setAnalysisError('Unable to read this photo. Choose another file.');
+                  };
+                  reader.onload = () => {
                     const base64 = reader.result as string;
                     setCustomImage(base64);
                     handleAnalyze(undefined, base64);
@@ -200,14 +232,43 @@ export const CollectorView: React.FC = () => {
           </label>
 
           <button
-            onClick={() => handleAnalyze(selectedPreset)}
+            onClick={() => customImage ? handleAnalyze(undefined, customImage) : handleAnalyze(selectedPreset)}
             disabled={loading}
             className="btn-emerald text-xs flex items-center gap-2"
           >
             <Sparkles className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            <span>Run Material Assay</span>
+            <span>{customImage ? 'Analyze uploaded photo' : 'Run demo sample'}</span>
           </button>
         </div>
+      </div>
+
+      <div className="surface-card p-4 space-y-3">
+        <p className="text-sm" role="status">
+          {triageResult?.analysis_source === 'bedrock'
+            ? `Uploaded photo analyzed with ${triageResult.model_id}. Visual suggestions do not verify purity or safety.`
+            : customImage ? 'Uploaded photo selected. Analysis pending or unavailable.' : 'Demo sample mode — these examples are not live model results.'}
+        </p>
+        <fieldset disabled={loading} className="flex flex-wrap gap-4 text-xs">
+          <legend className="mb-2">Report any hazards you noticed (changing these requires re-analysis)</legend>
+          {([
+            ['battery_damage', 'Damaged battery'], ['chemical_leak', 'Chemical leak'],
+            ['pressurized_canister', 'Pressurized container'], ['exposed_wiring', 'Exposed wiring'],
+            ['sharp_edges', 'Sharp edges'],
+          ] as const).map(([flag, label]) => (
+            <label key={flag} className="flex items-center gap-2">
+              <input type="checkbox" checked={!!reportedHazards[flag]} onChange={(e) => {
+                setReportedHazards((previous) => ({ ...previous, [flag]: e.target.checked }));
+                analysisVersion.current += 1;
+                setTriageResult(null);
+                setValuationResult(null);
+                setQrResult(null);
+              }} />{label}
+            </label>
+          ))}
+        </fieldset>
+        {triageResult?.requires_manual_inspection && <p role="alert">Inspection required. Valuation and handover are paused until qualified review.</p>}
+        {triageResult?.analysis_source === 'bedrock' && <p className="text-xs">Price estimates for uploaded images are unavailable until the material, grade, and unit are confirmed.</p>}
+        {analysisError && <p role="alert" className="text-rose-600">{analysisError}</p>}
       </div>
 
       {/* KPI Metrics Strip */}
@@ -216,13 +277,13 @@ export const CollectorView: React.FC = () => {
         <div className="surface-card p-4 space-y-1">
           <span className="text-[10px] font-mono uppercase tracking-wider text-[var(--text-muted)] flex items-center gap-1.5">
             <Scale className="w-3.5 h-3.5 text-emerald-500" />
-            <span>Verified Scale Weight</span>
+            <span>Entered Scale Weight</span>
           </span>
           <div className="flex items-baseline gap-2 pt-1">
             <span className="text-2xl font-bold font-mono text-[var(--text-primary)]">{measuredWeightKg.toFixed(1)}</span>
             <span className="text-xs text-[var(--text-muted)] font-mono">kg</span>
           </div>
-          <span className="text-[11px] text-[var(--text-muted)] block">Calibrated Hanging Scale</span>
+          <span className="text-[11px] text-[var(--text-muted)] block">Collector-reported measurement</span>
         </div>
 
         {/* Metric 2 */}
@@ -296,6 +357,7 @@ export const CollectorView: React.FC = () => {
                 return (
                   <button
                     key={item.id}
+                    disabled={loading}
                     onClick={() => {
                       setCustomImage(null);
                       handleAnalyze(item.id);
@@ -373,6 +435,7 @@ export const CollectorView: React.FC = () => {
 
               <button
                 onClick={handleRecalculateValuation}
+                disabled={loading || !triageResult || triageResult.requires_manual_inspection || triageResult.analysis_source !== 'demo'}
                 className="w-full btn-emerald text-xs mt-1"
               >
                 Recalculate with Scale Weight
@@ -407,10 +470,10 @@ export const CollectorView: React.FC = () => {
             <div className="surface-card p-12 text-center space-y-3 font-mono">
               <RefreshCw className="w-7 h-7 text-emerald-500 animate-spin mx-auto" />
               <p className="text-[var(--text-primary)] text-xs font-bold">
-                Executing AWS Bedrock Multimodal Triage Assay...
+                {customImage ? 'Analyzing uploaded photo…' : 'Loading demo sample…'}
               </p>
               <span className="text-[11px] text-[var(--text-muted)] block">
-                Cross-referencing CPCB Schedule-III segregation matrices
+                Checking the selected input and review requirements
               </span>
             </div>
           ) : triageResult ? (
@@ -424,7 +487,7 @@ export const CollectorView: React.FC = () => {
                         {triageResult.category.toUpperCase()}
                       </span>
                       <span className="text-xs text-[var(--text-muted)] font-mono">
-                        CPCB Code: SCH-03-{(triageResult.overall_confidence * 1000).toFixed(0)}
+                        {triageResult.analysis_source === 'demo' ? 'Demonstration result' : 'Provisional visual identification'}
                       </span>
                     </div>
                     <h3 className="text-lg font-bold text-[var(--text-primary)] tracking-tight">
@@ -448,7 +511,7 @@ export const CollectorView: React.FC = () => {
                       {triageResult.confidence_tier === 'HIGH' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
                       {triageResult.confidence_tier === 'MEDIUM' && <HelpCircle className="w-3.5 h-3.5 text-amber-500" />}
                       {triageResult.confidence_tier === 'LOW' && <AlertTriangle className="w-3.5 h-3.5 text-rose-500" />}
-                      {triageResult.confidence_tier} CONFIDENCE ({(triageResult.overall_confidence * 100).toFixed(0)}%)
+                      {triageResult.confidence_tier} {triageResult.analysis_source === 'demo' ? 'DEMO SCORE' : 'MODEL SELF-ASSESSMENT'} ({(triageResult.overall_confidence * 100).toFixed(0)}%)
                     </span>
                   </div>
                 </div>
@@ -486,7 +549,7 @@ export const CollectorView: React.FC = () => {
                     {triageResult.hazard_analysis.hazard_description}
                   </p>
                   <div className="p-3 rounded-lg bg-[var(--bg-surface-well)] border border-rose-500/30 text-xs font-mono text-rose-700 dark:text-rose-300">
-                    <strong>Containment:</strong> {triageResult.hazard_analysis.containment_protocol}
+                    <strong>Handling restrictions:</strong> {triageResult.hazard_analysis.containment_protocol}
                   </div>
                 </div>
               )}
@@ -506,6 +569,7 @@ export const CollectorView: React.FC = () => {
                       <button
                         key={opt.option_id}
                         onClick={() => handleClarify(opt.option_id)}
+                        disabled={loading}
                         className="p-3 rounded-lg bg-[var(--bg-surface-subtle)] hover:bg-[var(--bg-surface-hover)] border border-amber-500/30 text-left transition-all hover:border-amber-400 cursor-pointer"
                       >
                         <p className="text-xs font-bold text-amber-600 dark:text-amber-300 mb-0.5">{opt.label}</p>
@@ -524,7 +588,7 @@ export const CollectorView: React.FC = () => {
                       <ShieldCheck className="w-4 h-4 text-emerald-500" />
                       <span>Segregation &amp; Co-Storage Protocol</span>
                     </span>
-                    <span className="text-[10px] font-mono text-[var(--text-muted)]">CPCB Compliant</span>
+                    <span className="text-[10px] font-mono text-[var(--text-muted)]">Provisional guidance</span>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
@@ -616,7 +680,7 @@ export const CollectorView: React.FC = () => {
                 ) : (
                   <button
                     onClick={handleGenerateQR}
-                    disabled={triageResult.hazard_analysis?.is_hazardous}
+                    disabled={loading || triageResult.requires_manual_inspection}
                     className="w-full btn-emerald text-xs py-2.5 flex items-center justify-center gap-2"
                   >
                     <QrCode className="w-4 h-4" />

@@ -48,6 +48,10 @@ export interface ClarificationPrompt {
 }
 
 export interface TriageAnalysisResponse {
+  analysis_source: 'demo' | 'bedrock';
+  model_id?: string;
+  request_id?: string;
+  latency_ms?: number;
   item_title: string;
   category: WasteCategory;
   overall_confidence: number;
@@ -390,13 +394,17 @@ export const FALLBACK_BINS: SmartBin[] = [
 // API Client Functions
 // ==========================================
 
-export async function analyzeTriage(sampleItemId?: string, imageBase64?: string): Promise<TriageAnalysisResponse> {
+export async function analyzeTriage(sampleItemId?: string, imageBase64?: string, reportedHazards?: Partial<HazardMarkers>): Promise<TriageAnalysisResponse> {
   const res = await fetch(`${API_BASE_URL}/triage/analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sample_item_id: sampleItemId, image_base64: imageBase64 }),
+    body: JSON.stringify({ sample_item_id: sampleItemId, image_base64: imageBase64, reported_hazards: reportedHazards }),
+    signal: AbortSignal.timeout(75000),
   });
-  if (!res.ok) throw new Error(`Triage API error: ${res.statusText}`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => null);
+    throw new Error(typeof error?.detail === 'string' ? error.detail : 'Analysis failed. Check the image and try again, or request manual inspection.');
+  }
   return res.json();
 }
 
