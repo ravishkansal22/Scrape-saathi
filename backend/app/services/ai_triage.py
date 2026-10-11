@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 from typing import Dict, Any, List, Optional
@@ -280,7 +281,191 @@ class AITriageService:
         )
 
     def _call_bedrock_vision(self, request: TriageAnalysisRequest) -> Optional[TriageAnalysisResponse]:
-        """Placeholder for Amazon Bedrock Claude 3.5 Sonnet visual analysis."""
-        return None
+        """
+        Invokes Amazon Bedrock Multimodal Vision (Amazon Nova or Claude).
+        Parses structured visual analysis, evaluates hazards, and binds to segregation rules.
+        """
+        if not self.bedrock_client or not request.image_base64:
+            return None
+
+        # Clean base64 and extract media type
+        raw_b64 = request.image_base64
+        img_format = "jpeg"
+        if "," in raw_b64:
+            header, raw_b64 = raw_b64.split(",", 1)
+            if "png" in header:
+                img_format = "png"
+            elif "webp" in header:
+                img_format = "webp"
+            elif "gif" in header:
+                img_format = "gif"
+
+        prompt = (
+            "You are the ScrapSetu AI Waste Triage & Circular Economy Engine. "
+            "Analyze the image of discarded scrap / waste item. "
+            "Return a strictly valid JSON object matching this schema without markdown fences:\n"
+            "{\n"
+            '  "item_title": "Descriptive title of item",\n'
+            '  "category": "biodegradable" | "recyclable" | "reusable" | "e-waste" | "hazardous" | "mixed" | "unknown",\n'
+            '  "overall_confidence": 0.0 to 1.0,\n'
+            '  "materials_detected": [{"name": "string", "material_type": "string", "purity_grade": "string", "recyclable": true/false}],\n'
+            '  "contamination_risk": "Low" | "Moderate" | "High",\n'
+            '  "recycling_potential": "string",\n'
+            '  "biodegradability_rating": "string",\n'
+            '  "recommended_pathway": "string",\n'
+            '  "is_hazardous": true/false,\n'
+            '  "battery_damage": true/false,\n'
+            '  "chemical_leak": true/false,\n'
+            '  "pressurized_canister": true/false,\n'
+            '  "hazard_description": "string or null",\n'
+            '  "safe_handling_guidance": "string"\n'
+            "}\n"
+            "DO NOT ESTIMATE OR GUESS WEIGHT. Focus strictly on visual material composition and physical safety hazards."
+        )
+
+        content_text = ""
+        # 1. Try universal Bedrock Converse API (works seamlessly with Amazon Nova and Anthropic)
+        try:
+            image_bytes = base64.b64decode(raw_b64.strip())
+            conv_response = self.bedrock_client.converse(
+                modelId=settings.BEDROCK_MODEL_ID,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "image": {
+                                    "format": img_format,
+                                    "source": {"bytes": image_bytes},
+                                }
+                            },
+                            {"text": prompt},
+                        ],
+                    }
+                ],
+                inferenceConfig={"temperature": 0.1, "maxTokens": 1500},
+            )
+            content_text = conv_response["output"]["message"]["content"][0]["text"].strip()
+        except Exception as conv_err:
+            logger.warning(f"Bedrock converse API failed, falling back to invoke_model: {conv_err}")
+            # 2. Model-specific invoke_model fallback
+            if "nova" in settings.BEDROCK_MODEL_ID.lower():
+                body = json.dumps({
+                    "schemaVersion": "messages-v1",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "image": {
+                                        "format": img_format,
+                                        "source": {"bytes": raw_b64.strip()},
+                                    }
+                                },
+                                {"text": prompt},
+                            ],
+                        }
+                    ],
+                    "inferenceConfig": {"max_new_tokens": 1500, "temperature": 0.1},
+                })
+            else:
+                body = json.dumps({
+                    "anthropic_version": "bedrock-2023-05-31",
+                    "max_tokens": 1500,
+                    "temperature": 0.1,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": f"image/{img_format}",
+                                        "data": raw_b64.strip(),
+                                    },
+                                },
+                                {"type": "text", "text": prompt},
+                            ],
+                        }
+                    ],
+                })
+
+            response = self.bedrock_client.invoke_model(
+                modelId=settings.BEDROCK_MODEL_ID,
+                body=body,
+                contentType="application/json",
+                accept="application/json",
+            )
+            resp_body = json.loads(response["body"].read().decode("utf-8"))
+            if "output" in resp_body:
+                content_text = resp_body["output"]["message"]["content"][0]["text"].strip()
+            elif "content" in resp_body:
+                content_text = resp_body["content"][0]["text"].strip()
+
+        # Remove any unexpected markdown fences
+        if content_text.startswith("```"):
+            content_text = content_text.strip("`")
+            if content_text.startswith("json"):
+                content_text = content_text[4:].strip()
+
+        data = json.loads(content_text)
+        cat_str = data.get("category", "unknown").lower()
+        try:
+            category = WasteCategory(cat_str)
+        except ValueError:
+            category = WasteCategory.UNKNOWN
+
+        conf = float(data.get("overall_confidence", 0.75))
+        if conf >= 0.85:
+            tier = ConfidenceTier.HIGH
+        elif conf >= 0.60:
+            tier = ConfidenceTier.MEDIUM
+        else:
+            tier = ConfidenceTier.LOW
+
+        materials = [
+            MaterialComponent(
+                name=m.get("name", "Unknown Component"),
+                material_type=m.get("material_type", "General Material"),
+                purity_grade=m.get("purity_grade", "Standard"),
+                recyclable=m.get("recyclable", True),
+            )
+            for m in data.get("materials_detected", [])
+        ]
+
+        is_haz = bool(data.get("is_hazardous", False))
+        battery_dmg = bool(data.get("battery_damage", False))
+        chem_leak = bool(data.get("chemical_leak", False))
+        pressurized = bool(data.get("pressurized_canister", False))
+
+        hazard_analysis = HazardMarkers(
+            is_hazardous=is_haz or battery_dmg or chem_leak or pressurized,
+            battery_damage=battery_dmg,
+            chemical_leak=chem_leak,
+            pressurized_canister=pressurized,
+            hazard_description=data.get("hazard_description"),
+            containment_protocol=(
+                "DETERMINISTIC SAFETY OVERRIDE: Isolate in fireproof/sand-buffered containment drum."
+                if (battery_dmg or is_haz) else None
+            ),
+        )
+
+        return TriageAnalysisResponse(
+            item_title=data.get("item_title", "Scrap Material Item"),
+            category=category,
+            overall_confidence=conf,
+            confidence_tier=tier,
+            materials_detected=materials,
+            contamination_risk=data.get("contamination_risk", "Moderate"),
+            recycling_potential=data.get("recycling_potential", "Moderate"),
+            biodegradability_rating=data.get("biodegradability_rating", "Non-biodegradable"),
+            recommended_pathway=data.get("recommended_pathway", "Material Recovery"),
+            segregation_guidance=SEGREGATION_RULES_MATRIX.get(category, SEGREGATION_RULES_MATRIX[WasteCategory.MIXED]),
+            hazard_analysis=hazard_analysis,
+            safe_handling_guidance=data.get("safe_handling_guidance", "Handle with standard work gloves."),
+            requires_manual_inspection=(tier == ConfidenceTier.LOW or hazard_analysis.is_hazardous),
+            manual_inspection_reason="Low AI confidence or detected hazard requires physical verification" if (tier == ConfidenceTier.LOW or hazard_analysis.is_hazardous) else None,
+        )
 
 ai_triage_service = AITriageService()

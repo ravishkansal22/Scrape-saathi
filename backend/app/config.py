@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # AWS Configuration
     AWS_REGION: str = "us-east-1"
     AWS_S3_BUCKET: str = "scrapsetudb-scrap-images"
-    BEDROCK_MODEL_ID: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    BEDROCK_MODEL_ID: str = "amazon.nova-lite-v1:0"
 
     @field_validator("CORS_ORIGINS", mode="after")
     @classmethod
