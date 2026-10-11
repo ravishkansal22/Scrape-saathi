@@ -1,248 +1,134 @@
-import pytest
+import base64
+import io
+import uuid
+from datetime import datetime, timezone
+from PIL import Image
 from fastapi.testclient import TestClient
 from app.main import app
 
-client = TestClient(app)
+client=TestClient(app)
+def headers(role, key=None):
+    token=client.post('/api/v2/login',json={'user':role+'_demo','password':'scrapsetu-local'}).json()['access_token']
+    return {'Authorization':'Bearer '+token,'Idempotency-Key':key or str(uuid.uuid4())}
+def call(role,path,data=None,status=200,method='POST',key=None):
+    r=client.request(method,'/api/v2'+path,json=data,headers=headers(role,key))
+    assert r.status_code==status,r.text
+    return r.json()
+def lot(role='collector',weight=10):
+    a=call(role,'/analyze',{'sample_item_id':'electric_motor'})
+    return call(role,'/lots',{'title':'Demo copper','material_id':'copper','weight_kg':weight,'analysis_id':a['id']})
+def transfer(l, sender='collector',receiver='recycler'):
+    t=call(sender,f"/lots/{l['id']}/offer",{'version':l['version'],'receiver_id':receiver+'_demo','rate':100,'fee':0})
+    t=call(receiver,'/handover/receive',{'token':t['qr_token'],'measured_weight_kg':l['available_kg'],'deduction_kg':1})
+    return call(sender,f"/transactions/{t['id']}/accept",{'version':t['version']})
+def image():
+    f=io.BytesIO();Image.new('RGB',(10,10),'red').save(f,format='PNG');return base64.b64encode(f.getvalue()).decode()
 
-def test_root_and_health():
-    res_root = client.get("/")
-    assert res_root.status_code == 200
-    data_root = res_root.json()
-    assert data_root["status"] == "online"
-    assert "subsystems" in data_root
+def test_auth_and_legacy_routes():
+    assert client.get('/health').status_code==200
+    assert client.get('/api/v2/state').status_code==401
+    assert client.post('/api/v1/lots/create',json={}).status_code==404
+    call('collector','/impact/factors',{},422,'PUT')
+    call('collector','/fleet/route',{'capacity_kg':100,'material_id':'copper'},403)
 
-    res_health = client.get("/health")
-    assert res_health.status_code == 200
-    assert res_health.json()["status"] == "healthy"
+def test_persisted_idempotent_lot_and_manual_hazards():
+    payload={'title':'Manual cable','material_id':'copper','weight_kg':5,'reported_hazards':{'sharp_edges':True}}
+    a=call('collector','/lots',payload,key='offline-1');b=call('collector','/lots',payload,key='offline-1')
+    assert a==b and a['status']=='REVIEW_REQUIRED' and a['hazardous']
+    call('collector','/lots',{**payload,'weight_kg':6},409,key='offline-1')
+    call('collector',f"/lots/{a['id']}/offer",{'version':1,'receiver_id':'recycler_demo','rate':100},409)
+    call('collector',f"/lots/{a['id']}/review",{'version':1,'approved':True,'notes':'Inspected material'},403)
+    reviewed=call('admin',f"/lots/{a['id']}/review",{'version':1,'approved':True,'notes':'Inspected material'})
+    assert reviewed['status']=='AVAILABLE'
+    with TestClient(app) as other:
+        assert len(other.get('/api/v2/state',headers=headers('collector')).json()['lots'])==1
 
-def test_ai_triage_classification_and_segregation():
-    # 1. High-confidence Recyclable Motor
-    res1 = client.post("/api/v1/triage/analyze", json={"sample_item_id": "electric_motor"})
-    assert res1.status_code == 200
-    data1 = res1.json()
-    assert data1["category"] == "recyclable"
-    assert data1["confidence_tier"] == "HIGH"
-    assert len(data1["materials_detected"]) > 0
-    # Verify NO estimated weight in response components
-    for comp in data1["materials_detected"]:
-        assert "estimated_weight_kg" not in comp
-    assert "segregation_guidance" in data1
-    assert len(data1["segregation_guidance"]["compatible_materials"]) > 0
+def test_full_handover_payment_recovery_trace():
+    l=lot();t=transfer(l)
+    assert t['sender_weight_kg']==10 and t['effective_kg']==9 and t['final_amount']==900
+    call('recycler','/handover/receive',{'token':t['qr_token'],'measured_weight_kg':10},409)
+    call('collector',f"/transactions/{t['id']}/report-payment",{'version':t['version'],'amount':900,'method':'CASH','reference':'Cash receipt'},403)
+    t=call('recycler',f"/transactions/{t['id']}/report-payment",{'version':t['version'],'amount':900,'method':'CASH','reference':'Cash receipt'})
+    call('recycler',f"/transactions/{t['id']}/confirm-payment",{'version':t['version']},403)
+    t=call('collector',f"/transactions/{t['id']}/confirm-payment",{'version':t['version']})
+    assert t['payment_status']=='PAID'
+    assert call('collector','/state',method='GET')['earnings']['received_inr']==900
+    receipt=call('collector',f"/transactions/{t['id']}/receipt",method='GET');assert 'qr_token' not in receipt
+    evidence=call('recycler','/evidence',{'image_base64':image()})
+    l=call('recycler','/state',method='GET')['lots'][0]
+    payload={'version':l['version'],'recovered_kg':8,'residue_kg':1,'method':'Mechanical recovery','evidence_id':evidence['id']}
+    call('recycler',f"/lots/{l['id']}/outcome",{**payload,'recovered_kg':9},422)
+    call('recycler',f"/lots/{l['id']}/outcome",payload)
+    call('recycler',f"/lots/{l['id']}/outcome",payload,409)
+    impact=call('collector','/impact',method='GET');assert impact['demo']['recovered_kg']==8
+    assert impact['demo']['estimated_energy_kwh'] is None
+    trace=call('collector',f"/lots/{l['id']}/trace",method='GET');assert len(trace['events'])>=6
+    call('collector',f"/transactions/{t['id']}/dispute",{'version':t['version'],'reason':'Incorrect payment'},409)
 
-    # 2. Hazardous Swollen Battery (Deterministic Safety Override)
-    res2 = client.post("/api/v1/triage/analyze", json={"sample_item_id": "swollen_laptop"})
-    assert res2.status_code == 200
-    data2 = res2.json()
-    assert data2["category"] == "hazardous"
-    assert data2["hazard_analysis"]["is_hazardous"] is True
-    assert data2["hazard_analysis"]["battery_damage"] is True
-    assert data2["requires_manual_inspection"] is True
-    assert "SAFETY OVERRIDE" in data2["hazard_analysis"]["containment_protocol"]
+def test_qr_reissue_and_role_binding():
+    l=lot();t=call('collector',f"/lots/{l['id']}/offer",{'version':1,'receiver_id':'recycler_demo','rate':100})
+    call('vendor','/handover/receive',{'token':t['qr_token'],'measured_weight_kg':10},403)
+    new=call('collector',f"/transactions/{t['id']}/reissue",{'version':1})
+    call('recycler','/handover/receive',{'token':t['qr_token'],'measured_weight_kg':10},409)
+    call('recycler','/handover/receive',{'token':new['qr_token'],'measured_weight_kg':10,'deduction_kg':10},422)
 
-    # 3. Medium Confidence Cable & Clarification Promotion
-    res3 = client.post("/api/v1/triage/analyze", json={"sample_item_id": "copper_cable"})
-    assert res3.status_code == 200
-    data3 = res3.json()
-    assert data3["confidence_tier"] == "MEDIUM"
-    assert data3["clarification_prompt"] is not None
+def test_aggregation_conserves_sources_and_versions():
+    l=lot();transfer(l,receiver='vendor');l=call('vendor','/state',method='GET')['lots'][0]
+    payload={'title':'Bulk copper','allocations':[{'lot_id':l['id'],'version':l['version'],'weight_kg':4}]}
+    bulk=call('vendor','/lots/merge',payload)
+    assert bulk['available_kg']==4
+    call('vendor','/lots/merge',payload,409)
+    state=call('vendor','/state',method='GET');assert sum(x['available_kg'] for x in state['lots'])==9
+    assert len(call('collector',f"/lots/{bulk['id']}/trace",method='GET')['source_lots'])==2
 
-    # Submit clarification
-    res_clarify = client.post("/api/v1/triage/clarify", json={
-        "item_name": "Heavy-Duty Industrial Wiring Cable",
-        "selected_option_id": "pure_copper",
-        "category": "recyclable"
-    })
-    assert res_clarify.status_code == 200
-    data_clarify = res_clarify.json()
-    assert data_clarify["confidence_tier"] == "HIGH"
-    assert "Grade A" in data_clarify["materials_detected"][0]["purity_grade"]
+def test_price_signal_pickup_and_fleet():
+    call('admin','/prices/copper',{'rate':700,'source':'Test reference only','observed_at':datetime.now(timezone.utc).isoformat()},method='PUT')
+    l=lot();p=call('collector','/pickups',{'lot_id':l['id'],'buyer_id':'recycler_demo','requested_window':'Tomorrow morning'})
+    call('vendor',f"/pickups/{p['id']}",{'status':'ACCEPTED'},403)
+    call('recycler',f"/pickups/{p['id']}",{'status':'ACCEPTED'})
+    t=call('collector',f"/lots/{l['id']}/offer",{'version':1,'receiver_id':'recycler_demo','rate':100});assert t['price_warning']
+    reading={'bin_id':'TEST1','latitude':28.64,'longitude':77.24,'capacity_kg':100,'weight_kg':85,'fill_pct':85,'material_id':'copper','timestamp':datetime.now(timezone.utc).isoformat()}
+    call('admin','/fleet/simulate',reading)
+    r=call('admin','/fleet/route',{'capacity_kg':100,'material_id':'copper'})
+    assert r['planned_km']<=r['baseline_km'] and r['trips'][0]['load_kg']==85
 
-def test_reference_pricing_and_measured_weight_valuation():
-    # 1. Get Reference Price Catalog
-    res_cat = client.get("/api/v1/pricing/catalog")
-    assert res_cat.status_code == 200
-    cat = res_cat.json()
-    assert len(cat) >= 5
-    copper_item = next(item for item in cat if "Copper" in item["material_name"])
-    assert copper_item["reference_price"] > 500
-    assert copper_item["price_source"] is not None
-    assert copper_item["last_updated"] is not None
+def test_dispute_requires_admin_resolution_before_processing():
+    l=lot();t=transfer(l)
+    t=call('collector',f"/transactions/{t['id']}/dispute",{'version':t['version'],'reason':'Wrong grade price'})
+    call('recycler',f"/transactions/{t['id']}/resolve",{'version':t['version'],'notes':'Both parties agreed to resume'},403)
+    t=call('admin',f"/transactions/{t['id']}/resolve",{'version':t['version'],'notes':'Both parties agreed to resume'})
+    assert t['status']=='CONFIRMED'
+    assert call('recycler','/state',method='GET')['lots'][0]['status']=='AVAILABLE'
 
-    # 2. Valuation calculation using actual scale measured weight
-    res_val = client.post("/api/v1/pricing/calculate", json={
-        "material_name": "Grade-A Bright Bare Copper Wire",
-        "category": "Non-Ferrous Metals",
-        "measured_weight_kg": 12.5,
-        "condition_grade": "Clean / Unalloyed"
-    })
-    assert res_val.status_code == 200
-    val_data = res_val.json()
-    assert val_data["measured_quantity"] == 12.5
-    assert val_data["quantity_type"] == "WEIGHT"
-    assert val_data["unit"] == "INR_PER_KG"
-    assert val_data["total_estimated_value"] == round(12.5 * 710.0, 2)
-    assert val_data["net_payable_estimate"] > 0
-    assert "12.50 kg measured on scale" in val_data["calculation_breakdown"]
+def test_suspend_receiver_blocks_receipt_and_matching():
+    l=lot();t=call('collector',f"/lots/{l['id']}/offer",{'version':1,'receiver_id':'recycler_demo','rate':100})
+    call('admin','/facilities/recycler_demo/verify',{'verified':False,'notes':'Permit suspended for test'})
+    call('recycler','/handover/receive',{'token':t['qr_token'],'measured_weight_kg':10},403)
+    matches=call('collector','/partners?material_id=copper&latitude=28&longitude=77&weight_kg=10',method='GET')
+    assert all(f['id']!='recycler_demo' for f in matches)
 
-def test_digital_waste_lot_and_qr_lifecycle():
-    # 1. Create a digital waste lot with scale weight
-    lot_req = {
-        "creator_id": "kabadi_ramesh_01",
-        "creator_name": "Ramesh Kumar",
-        "creator_role": "KABADIWALA",
-        "item_title": "Clean Brass Water Meter Valves",
-        "category": "recyclable",
-        "measured_weight_kg": 8.4,
-        "item_count": 14,
-        "condition": "Disassembled / Heavy",
-        "origin_location": "Seelampur, Delhi"
-    }
-    res_create = client.post("/api/v1/lots/create", json=lot_req)
-    assert res_create.status_code == 200
-    lot = res_create.json()
-    lot_id = lot["lot_id"]
-    assert lot["measured_weight_kg"] == 8.4
-    assert lot["status"] == "CREATED"
-    assert len(lot["custody_history"]) == 1
+def test_factor_snapshot_does_not_rewrite_past_impact():
+    factor={'material_id':'copper','virgin_kwh_per_kg':5,'secondary_kwh_per_kg':2,'source':'Synthetic test factor only','geography':'Test','year':2026,'boundary':'Test boundary; not scientific data','uncertainty':'Test assumption'}
+    call('admin','/impact/factors',factor,method='PUT')
+    l=lot();transfer(l);l=call('recycler','/state',method='GET')['lots'][0]
+    evidence=call('recycler','/evidence',{'image_base64':image()})
+    call('recycler',f"/lots/{l['id']}/outcome",{'version':l['version'],'recovered_kg':8,'residue_kg':1,'method':'Test method','evidence_id':evidence['id']})
+    call('admin','/impact/factors',{**factor,'virgin_kwh_per_kg':10},method='PUT')
+    assert call('collector','/impact',method='GET')['demo']['estimated_energy_kwh']==24
 
-    # 2. Generate HMAC-SHA256 Signed QR
-    res_qr = client.post("/api/v1/handover/generate-qr", json={
-        "lot_id": lot_id,
-        "sender_id": "kabadi_ramesh_01",
-        "sender_role": "KABADIWALA"
-    })
-    assert res_qr.status_code == 200
-    qr_data = res_qr.json()
-    qr_token = qr_data["qr_token"]
-    assert qr_token is not None
-    assert qr_data["qr_image_base64"].startswith("data:image/")
+def test_private_evidence_and_unknown_lot_have_no_fabricated_history():
+    e=call('collector','/evidence',{'image_base64':image()})
+    call('vendor',f"/evidence/{e['id']}",status=403,method='GET')
+    call('collector','/lots/NONEXISTENT/trace',status=404,method='GET')
 
-    # 3. Verify QR code
-    res_verify = client.post(f"/api/v1/handover/verify-qr?qr_token={qr_token}")
-    assert res_verify.status_code == 200
-    ver_data = res_verify.json()
-    assert ver_data["is_valid"] is True
-    assert ver_data["lot_id"] == lot_id
-    assert ver_data["measured_weight_kg"] == 8.4
+def test_validation_does_not_echo_image_or_password():
+    r=client.post('/api/v2/evidence',json={'image_base64':123,'private':'SECRET'},headers=headers('collector'))
+    assert r.status_code==422 and 'SECRET' not in r.text and '"input"' not in r.text
 
-def test_transaction_full_lifecycle_discrepancy_and_payments():
-    # 1. Create Transaction Offer
-    txn_req = {
-        "lot_id": "LOT-7A9B1C2D",
-        "sender_id": "kabadi_ramesh_01",
-        "sender_name": "Ramesh Kumar (Kabadiwala)",
-        "sender_role": "KABADIWALA",
-        "receiver_id": "vendor_apex_metals_01",
-        "receiver_name": "Apex Scrap Traders (Vendor)",
-        "receiver_role": "VENDOR",
-        "material_category": "recyclable",
-        "item_title": "Induction Motor Copper Windings",
-        "measured_weight_kg": 15.0,  # Sender claimed 15.0 kg
-        "agreed_unit_price": 680.0,
-        "payment_method": "UPI",
-        "location_name": "Mayapuri Yard"
-    }
-    res_txn = client.post("/api/v1/transactions/create", json=txn_req)
-    assert res_txn.status_code == 200
-    txn = res_txn.json()
-    txn_id = txn["transaction_id"]
-    assert txn["transfer_status"] == "OFFERED"
-    assert txn["payment_status"] == "PENDING"
-    assert txn["final_payable_amount"] == 15.0 * 680.0
-
-    # 2. Receiver confirms receipt with physical weighbridge measurement & contamination deduction
-    # (Receiver scale reads 14.2 kg with 0.2 kg moisture/dirt deduction -> Effective 14.0 kg)
-    res_confirm = client.post(f"/api/v1/transactions/{txn_id}/confirm-receipt", json={
-        "receiver_id": "vendor_apex_metals_01",
-        "receiver_measured_weight_kg": 14.2,
-        "has_contamination": True,
-        "contamination_weight_deduction_kg": 0.2,
-        "inspection_notes": "Scale reading: 14.2 kg. 200g dirt deduction applied. Net: 14.0 kg."
-    })
-    assert res_confirm.status_code == 200
-    confirmed_txn = res_confirm.json()
-    assert confirmed_txn["transfer_status"] == "CONFIRMED"
-    assert confirmed_txn["effective_weight_kg"] == 14.0
-    assert confirmed_txn["final_payable_amount"] == 14.0 * 680.0  # ₹9520.0
-    assert confirmed_txn["discrepancy"]["has_discrepancy"] is True
-    assert confirmed_txn["discrepancy"]["weight_difference_kg"] == round(14.2 - 15.0, 2)
-    assert len(confirmed_txn["audit_history"]) >= 2
-
-    # 3. Update Payment Status to PAID via UPI
-    res_pay = client.post(f"/api/v1/transactions/{txn_id}/update-payment", json={
-        "updated_by_user_id": "vendor_apex_metals_01",
-        "payment_status": "PAID",
-        "amount_paid": 9520.0,
-        "payment_method": "UPI",
-        "payment_reference": "UPI/20261010/7766554433",
-        "notes": "Settled instantly via UPI to Ramesh Kumar"
-    })
-    assert res_pay.status_code == 200
-    paid_txn = res_pay.json()
-    assert paid_txn["payment_status"] == "PAID"
-    assert paid_txn["amount_paid_so_far"] == 9520.0
-    assert paid_txn["payment_reference"] == "UPI/20261010/7766554433"
-
-def test_vendor_portal_inspection_and_inventory():
-    # 1. Vendor Dashboard
-    res_dash = client.get("/api/v1/vendor/dashboard")
-    assert res_dash.status_code == 200
-    dash = res_dash.json()
-    assert dash["total_inventory_weight_kg"] > 0
-    assert len(dash["inventory_by_category"]) >= 3
-
-    # 2. Vendor Incoming Lots
-    res_incoming = client.get("/api/v1/vendor/incoming-lots")
-    assert res_incoming.status_code == 200
-    incoming = res_incoming.json()
-    assert len(incoming) >= 1
-
-    # 3. Vendor Physical Inspection & Offer
-    first_lot = incoming[0]
-    res_inspect = client.post("/api/v1/vendor/inspect", json={
-        "lot_id": first_lot["lot_id"],
-        "vendor_id": "vendor_apex_metals_01",
-        "physical_scale_weight_kg": 14.0,
-        "contamination_detected": False,
-        "contamination_weight_deduction_kg": 0.0,
-        "offered_price_per_kg": 690.0,
-        "payment_method": "UPI",
-        "inspection_notes": "Tested with XRF analyzer: 99.8% pure copper."
-    })
-    assert res_inspect.status_code == 200
-    assert res_inspect.json()["status"] == "OFFER_SUBMITTED"
-
-    # 4. Vendor Onward Bulk Lot Creation for Recycler
-    res_bulk = client.post("/api/v1/vendor/create-onward-lot", json={
-        "vendor_id": "vendor_apex_metals_01",
-        "material_category": "recyclable",
-        "material_name": "Grade-A Copper Wire Scrap",
-        "aggregated_weight_kg": 250.0,
-        "asking_price_per_kg": 720.0,
-        "storage_origin_bay": "Bay A-1 (Secure Lockup)",
-        "destination_facility": "EcoRecycle Smelting Plant"
-    })
-    assert res_bulk.status_code == 200
-    bulk_lot = res_bulk.json()
-    assert bulk_lot["measured_weight_kg"] == 250.0
-    assert "LOT-BULK-" in bulk_lot["lot_id"]
-
-def test_recycler_matching_intake_and_traceability_graph():
-    # 1. Spatial Matching of Recyclers
-    res_match = client.get("/api/v1/recyclers/match?lat=28.6139&lng=77.2090&category=e-waste")
-    assert res_match.status_code == 200
-    recs = res_match.json()
-    assert len(recs) >= 1
-    assert recs[0]["distance_km"] > 0
-    assert recs[0]["active_epr_accreditation"] is True
-
-    # 2. Get Traceability Graph
-    res_graph = client.get("/api/v1/recyclers/traceability/LOT-4E8F2A10")
-    assert res_graph.status_code == 200
-    graph = res_graph.json()
-    assert graph["lot_id"] == "LOT-4E8F2A10"
-    assert graph["origin_collector_name"] is not None
-    assert len(graph["custody_timeline"]) >= 2
-    for node in graph["custody_timeline"]:
-        assert node["custodian_role"] in ["KABADIWALA", "VENDOR", "RECYCLER", "GENERATOR"]
-        assert node["timestamp"] is not None
+def test_hazardous_metal_requires_specialist_scope_even_after_review():
+    from app.platform.store import transaction
+    l=call('collector','/lots',{'title':'Contaminated copper','material_id':'copper','weight_kg':5,'reported_hazards':{'chemical_leak':True}})
+    l=call('admin',f"/lots/{l['id']}/review",{'version':1,'approved':True,'notes':'Requires specialist hazardous handling'})
+    with transaction() as db:
+        db.require('facility','recycler_demo')['accepted_materials']=['copper']
+    call('collector',f"/lots/{l['id']}/offer",{'version':l['version'],'receiver_id':'recycler_demo','rate':100},422)

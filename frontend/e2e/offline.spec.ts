@@ -1,0 +1,22 @@
+import {test,expect} from '@playwright/test';
+test('collector saves offline, reloads shell, then synchronizes exactly once',async({page,context})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('/');await page.getByRole('button',{name:'Sign in locally'}).click();
+ await expect(page.getByRole('heading',{name:'2. Save a measured lot'})).toBeVisible();
+ await page.evaluate(async()=>{await navigator.serviceWorker.ready;});
+ await page.reload();await expect(page.getByRole('heading',{name:'2. Save a measured lot'})).toBeVisible();
+ await context.setOffline(true);await page.reload();
+ await expect(page.getByText('Offline · drafts stay on device')).toBeVisible();
+ const title='Offline browser QA '+Date.now();
+ await page.getByLabel('Lot description').fill(title);
+ await page.getByRole('button',{name:'Save offline draft'}).click();
+ await expect(page.getByText(title,{exact:true})).toBeVisible();
+ await context.setOffline(false);
+ await expect(page.getByText(title,{exact:true})).toHaveCount(0,{timeout:15000});
+ await page.getByRole('button',{name:'Lots',exact:true}).click();
+ await expect(page.getByText(title,{exact:true})).toBeVisible();
+ await expect(page.getByText('REVIEW_REQUIRED',{exact:true}).first()).toBeVisible();
+ await page.setViewportSize({width:390,height:844});
+ await page.screenshot({path:'test-results/mobile.png',fullPage:true});
+ expect(errors).toEqual([]);
+});

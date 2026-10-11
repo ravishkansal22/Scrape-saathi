@@ -1,0 +1,240 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: ScrapSetu pilot - authenticated ledger, evidence, AI and collection telemetry
+Parameters:
+  FrontendUrl:
+    Type: String
+    Description: HTTPS origin without trailing slash; update after creating Amplify app
+    Default: https://example.invalid
+    AllowedPattern: 'https://[^/]+'
+  DomainPrefix:
+    Type: String
+    Description: Globally unique Cognito hosted-login domain prefix
+  BedrockModelId:
+    Type: String
+    Default: amazon.nova-lite-v1:0
+  BedrockResourceArn:
+    Type: String
+    Description: Allowed regional foundation-model ARN (must match BedrockModelId)
+    Default: arn:aws:bedrock:us-east-1::foundation-model/amazon.nova-lite-v1:0
+  AlertEmail:
+    Type: String
+    Default: ''
+  IotEndpoint:
+    Type: String
+    Default: ''
+    Description: Account IoT data ATS endpoint, without https prefix
+Conditions:
+  HasEmail: !Not [!Equals [!Ref AlertEmail, '']]
+Resources:
+  Ledger:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: pk, AttributeType: S}
+        - {AttributeName: sk, AttributeType: S}
+      KeySchema:
+        - {AttributeName: pk, KeyType: HASH}
+        - {AttributeName: sk, KeyType: RANGE}
+      SSESpecification: {SSEEnabled: true}
+      PointInTimeRecoverySpecification: {PointInTimeRecoveryEnabled: true}
+  Evidence:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      VersioningConfiguration: {Status: Enabled}
+  EvidencePolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Evidence
+      PolicyDocument:
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: [!GetAtt Evidence.Arn, !Sub '${Evidence.Arn}/*']
+            Condition: {Bool: {'aws:SecureTransport': 'false'}}
+  SigningSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString: {PasswordLength: 64, ExcludePunctuation: true}
+  Users:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      AdminCreateUserConfig: {AllowAdminCreateUserOnly: true}
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      Policies:
+        PasswordPolicy: {MinimumLength: 12, RequireLowercase: true, RequireUppercase: true, RequireNumbers: true, RequireSymbols: true}
+  LoginClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref Users
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      SupportedIdentityProviders: [COGNITO]
+      CallbackURLs: [!Sub '${FrontendUrl}/']
+      LogoutURLs: [!Sub '${FrontendUrl}/']
+      PreventUserExistenceErrors: ENABLED
+  LoginDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties: {Domain: !Ref DomainPrefix, UserPoolId: !Ref Users}
+  Collectors:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: {GroupName: collector, UserPoolId: !Ref Users}
+  Vendors:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: {GroupName: vendor, UserPoolId: !Ref Users}
+  Recyclers:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: {GroupName: recycler, UserPoolId: !Ref Users}
+  Administrators:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties: {GroupName: admin, UserPoolId: !Ref Users}
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: '$default'
+      DefaultRouteSettings: {ThrottlingBurstLimit: 20, ThrottlingRateLimit: 10}
+      CorsConfiguration:
+        AllowOrigins: [!Ref FrontendUrl]
+        AllowMethods: [GET, POST, PUT, OPTIONS]
+        AllowHeaders: [Authorization, Content-Type, Idempotency-Key]
+  Backend:
+    Type: AWS::Serverless::Function
+    Metadata: {BuildMethod: makefile}
+    Properties:
+      CodeUri: ../backend/
+      Handler: app.lambda_handler.handler
+      Runtime: python3.12
+      MemorySize: 1024
+      Timeout: 28
+      ReservedConcurrentExecutions: 5
+      Environment:
+        Variables:
+          APP_ENV: production
+          AUTH_MODE: cognito
+          STORE_BACKEND: dynamodb
+          DYNAMODB_TABLE: !Ref Ledger
+          AWS_S3_BUCKET: !Ref Evidence
+          DATA_DIR: /tmp/scrapsetu
+          SECRET_KEY: !Sub '{{resolve:secretsmanager:${SigningSecret}:SecretString}}'
+          FRONTEND_URL: !Ref FrontendUrl
+          CORS_ORIGINS: !Ref FrontendUrl
+          COGNITO_USER_POOL_ID: !Ref Users
+          COGNITO_CLIENT_ID: !Ref LoginClient
+          COGNITO_DOMAIN: !Sub 'https://${DomainPrefix}.auth.${AWS::Region}.amazoncognito.com'
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          POLLY_ENABLED: 'true'
+          LOCATION_ENABLED: 'true'
+          AWS_IOT_ENDPOINT: !Ref IotEndpoint
+          AWS_IOT_TOPIC: scrapsetu/bins
+      Events:
+        Proxy: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: '/{proxy+}', Method: ANY}}
+        Root: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: '/', Method: ANY}}
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: [dynamodb:Query, dynamodb:GetItem, dynamodb:PutItem]
+              Resource: !GetAtt Ledger.Arn
+            - Effect: Allow
+              Action: [s3:GetObject, s3:PutObject]
+              Resource: !Sub '${Evidence.Arn}/evidence/*'
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              Resource: !Ref BedrockResourceArn
+            - Effect: Allow
+              Action: [polly:SynthesizeSpeech, geo-routes:CalculateRouteMatrix]
+              Resource: '*'
+            - Effect: Allow
+              Action: iot:Publish
+              Resource: !Sub 'arn:${AWS::Partition}:iot:${AWS::Region}:${AWS::AccountId}:topic/scrapsetu/bins'
+  BackendLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${Backend}'
+      RetentionInDays: 7
+  BinRule:
+    Type: AWS::IoT::TopicRule
+    Properties:
+      TopicRulePayload:
+        Sql: "SELECT *, 'scrapsetu.iot' AS source FROM 'scrapsetu/bins'"
+        AwsIotSqlVersion: '2016-03-23'
+        RuleDisabled: false
+        Actions:
+          - Lambda: {FunctionArn: !GetAtt Backend.Arn}
+  BinInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref Backend
+      Principal: iot.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !GetAtt BinRule.Arn
+  Alerts:
+    Type: AWS::SNS::Topic
+  EmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasEmail
+    Properties: {Protocol: email, Endpoint: !Ref AlertEmail, TopicArn: !Ref Alerts}
+  ErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: ScrapSetu API function errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions: [{Name: FunctionName, Value: !Ref Backend}]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref Alerts]
+  Budget:
+    Type: AWS::Budgets::Budget
+    Condition: HasEmail
+    Properties:
+      Budget:
+        BudgetName: !Sub '${AWS::StackName}-monthly'
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit: {Amount: 25, Unit: USD}
+      NotificationsWithSubscribers:
+        - Notification: {NotificationType: ACTUAL, ComparisonOperator: GREATER_THAN, Threshold: 80, ThresholdType: PERCENTAGE}
+          Subscribers: [{SubscriptionType: EMAIL, Address: !Ref AlertEmail}]
+  Hosting:
+    Type: AWS::Amplify::App
+    Properties:
+      Name: !Sub '${AWS::StackName}-web'
+      Platform: WEB
+      CustomRules:
+        - Source: '</^[^.]+$|\.(?!(css|gif|ico|jpg|jpeg|js|png|txt|svg|webmanifest|woff|woff2)$)([^.]+$)/>'
+          Target: /index.html
+          Status: '200'
+  HostingBranch:
+    Type: AWS::Amplify::Branch
+    Properties: {AppId: !GetAtt Hosting.AppId, BranchName: main, Stage: PRODUCTION, EnableAutoBuild: false}
+Outputs:
+  ApiUrl: {Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'}
+  FrontendUrl: {Value: !Sub 'https://main.${Hosting.DefaultDomain}'}
+  AmplifyAppId: {Value: !GetAtt Hosting.AppId}
+  UserPoolId: {Value: !Ref Users}
+  UserPoolClientId: {Value: !Ref LoginClient}
+  CognitoDomain: {Value: !Sub 'https://${DomainPrefix}.auth.${AWS::Region}.amazoncognito.com'}
+  EvidenceBucket: {Value: !Ref Evidence}
+  LedgerTable: {Value: !Ref Ledger}
