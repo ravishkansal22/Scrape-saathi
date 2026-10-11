@@ -1,60 +1,149 @@
-# Environment Configuration & Cloud Services Setup
+# ScrapSetu: local and AWS configuration
 
-This guide details all required and optional environment variables for **ScrapSetu**, their purpose in the platform, and how to obtain or generate the required credentials and endpoints.
+## Running locally
 
----
+Use Node 22+ and Python 3.11/3.12 (the current checkout was also tested with Python 3.9). From the repository root:
 
-## Environment Variables Matrix
+```sh
+python3 -m venv backend/.venv
+backend/.venv/bin/python -m pip install -r backend/requirements-dev.txt
+cp .env.example backend/.env  # only if you have not already created it
+cd frontend
+npm ci
+npm run build
+```
 
-| Service / Provider | Environment Variable | Purpose | How to Obtain |
-| :--- | :--- | :--- | :--- |
-| **AWS IAM Credentials** | `AWS_ACCESS_KEY_ID`<br>`AWS_SECRET_ACCESS_KEY`<br>`AWS_REGION` | Grants permission to invoke AWS cloud services (Bedrock, S3, IoT Core). | Generated in **AWS IAM Console** &rarr; **Security Credentials**. |
-| **Amazon Bedrock (LLM / Vision)** | `BEDROCK_MODEL_ID`<br>*(e.g., `anthropic.claude-3-5-sonnet-20241022-v2:0`)* | Powers zero-shot multimodal visual scrap decomposition and hazard identification. | Enabled in **AWS Bedrock Console** &rarr; **Model Access**. |
-| **Amazon S3 Storage** | `AWS_S3_BUCKET`<br>*(e.g., `scrapsetudb-scrap-images`)* | Stores user-uploaded scrap photos via pre-signed URLs and generates audit PDFs. | Created in **AWS S3 Console**. |
-| **AWS IoT Core** | `AWS_IOT_ENDPOINT`<br>*(e.g., `a3xxxxxxx-ats.iot.us-east-1.amazonaws.com`)* | Ingests MQTT telemetry packets published by smart bin sensors over TLS/X.509. | Found in **AWS IoT Core Console** &rarr; **Settings**. |
-| **Cryptographic QR Secret** | `SECRET_KEY` | Signs dynamic QR code payloads using HMAC-SHA256 for dual-key handover. | Configured locally in `.env` (Any secure string). |
-| **PostgreSQL + PostGIS (Optional)** | `DATABASE_URL`<br>*(e.g., `postgresql://user:pass@localhost:5432/scrapsetudb`)* | Relational database ledger managing digital waste lots and spatial queries (`ST_DWithin`). | Local Docker PostgreSQL or AWS RDS for PostgreSQL. |
+Start the API in one terminal, from `backend`:
 
----
+```sh
+.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+```
 
-## Detailed Service Setup Instructions
+Start the frontend in another, from `frontend`:
 
-### 1. AWS IAM Credentials
-1. Log into your **AWS Management Console**.
-2. Navigate to **IAM (Identity and Access Management)** &rarr; **Users**.
-3. Select or create an IAM User with appropriate execution policies (`AmazonBedrockFullAccess`, `AmazonS3FullAccess`, `AWSIoTFullAccess`).
-4. Under the **Security credentials** tab, click **Create access key**.
-5. Copy the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` into your local `.env` file.
-6. Set `AWS_REGION` to your primary AWS region (e.g., `us-east-1`).
+```sh
+npm run preview -- --host 127.0.0.1 --port 5173 --strictPort
+```
 
-### 2. Amazon Bedrock (Multimodal AI & Hazard Detection)
-1. In the AWS Console, open **Amazon Bedrock**.
-2. Go to **Model access** in the left sidebar.
-3. Request and enable access for **Anthropic Claude 3.5 Sonnet** (Model ID: `anthropic.claude-3-5-sonnet-20241022-v2:0`).
-4. Once granted, verify the model ID matches `BEDROCK_MODEL_ID` in your `.env`.
+Open **http://127.0.0.1:5173**. API docs: **http://127.0.0.1:8001/docs**. Port 8001 avoids another application already using 8000 on this workstation. Vite proxies `/api` to 8001; set `BACKEND_PROXY_URL` when starting Vite to change this. `npm run dev` supports UI development, but the service worker is enabled only in production builds/preview. Browser offline mode requires localhost or HTTPS.
 
-### 3. Amazon S3 Storage
-1. Navigate to the **Amazon S3** console.
-2. Click **Create bucket**.
-3. Provide a unique bucket name (e.g., `scrapsetudb-scrap-images`).
-4. Configure CORS settings if direct browser uploads are used.
-5. Set `AWS_S3_BUCKET` in `.env`.
+Local accounts: `collector_demo`, `vendor_demo`, `recycler_demo`, `admin_demo`. All use `scrapsetu-local`, unless changed through `LOCAL_DEMO_PASSWORD`. These are development fixtures; production disables this sign-in completely. All newly created local lots are labeled demo, including manual entries.
 
-### 4. AWS IoT Core (Smart Bin Telemetry)
-1. Navigate to **AWS IoT Core**.
-2. In the left navigation menu, click **Settings**.
-3. Locate the **Device data endpoint** (format: `xxxxxxxxxxxxxx-ats.iot.<region>.amazonaws.com`).
-4. Set `AWS_IOT_ENDPOINT` in `.env`.
+The backend loads **backend/.env**, not the root `.env`. It now exists in this checkout with local defaults, no AWS credentials, and owner-only permissions. Existing environment variables take precedence. SQLite, evidence and a generated signing key live in ignored `backend/data/`; keep that directory across restarts. Offline drafts live in the browser's IndexedDB, separated by account. Clearing browser data removes drafts; signing out keeps them for that same account.
 
-### 5. Cryptographic QR Secret
-1. Generate a cryptographically secure random string (e.g., run `openssl rand -hex 32` or `python -c "import secrets; print(secrets.token_hex(32))"`).
-2. Assign the output to `SECRET_KEY` in `.env`.
-3. This secret is used for HMAC-SHA256 digital signature validation during QR-based chain-of-custody handovers.
+## Minimum backend/.env for local testing
 
-### 6. PostgreSQL with PostGIS
-1. Run PostgreSQL with PostGIS enabled locally using Docker:
-   ```bash
-   docker run --name scrapsetu-postgis -e POSTGRES_USER=user -e POSTGRES_PASSWORD=pass -e POSTGRES_DB=scrapsetudb -p 5432:5432 -d postgis/postgis:15-3.3
-   ```
-2. Or provision an Amazon RDS for PostgreSQL instance with the PostGIS extension.
-3. Update `DATABASE_URL` in `.env`.
+```dotenv
+APP_ENV=development
+AUTH_MODE=local
+STORE_BACKEND=sqlite
+LOCAL_DEMO_PASSWORD=scrapsetu-local
+SECRET_KEY=
+FRONTEND_URL=http://127.0.0.1:5173
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+AWS_REGION=us-east-1
+BEDROCK_MODEL_ID=amazon.nova-lite-v1:0
+POLLY_ENABLED=false
+LOCATION_ENABLED=false
+```
+
+Leaving `SECRET_KEY` blank in development creates a persistent random key; production requires at least 32 characters supplied securely. Do not rotate it during a handover: outstanding QR tokens will stop validating. No cloud credentials are necessary for explicit demo samples, manual lots, receipts, local evidence, offline capture or straight-line route estimates. Uploaded-photo identification is a real Bedrock call and will report unavailable until AWS is configured; there is no fake fallback.
+
+## Add real photo AI to the local app
+
+Configure an AWS CLI profile with valid account credentials or SSO outside the repository, then add:
+
+```dotenv
+AWS_PROFILE=scrapsetu
+AWS_REGION=us-east-1
+BEDROCK_MODEL_ID=amazon.nova-lite-v1:0
+```
+
+Alternatively use all applicable temporary credential fields in **backend/.env**:
+
+```dotenv
+AWS_ACCESS_KEY_ID=<actual access key>
+AWS_SECRET_ACCESS_KEY=<actual secret key>
+AWS_SESSION_TOKEN=<required for temporary credentials>
+```
+
+Use one credential method. Never put these in frontend variables or Git. The account/region must allow invocation of the selected Nova model. The principal needs `bedrock:InvokeModel` on its actual model ARN. If using an inference profile, update both the model ID and the IAM policy for that profile and its target model resources. The supplied infrastructure defaults to a direct regional model in us-east-1. Restart the backend after env changes. The live inference call has one SDK attempt, a 3-second connect timeout, and a 20-second read timeout to fit the cloud HTTP request budget. Slow calls fail explicitly; this pilot has no asynchronous inference queue.
+
+## Optional AWS services from your local app
+
+| Variable | Actual value needed | Effect / permission |
+|---|---|---|
+| `AWS_S3_BUCKET` | Private bucket name, no `s3://` | Stores evidence with AES256; `s3:PutObject`, `s3:GetObject` on `evidence/*` |
+| `STORE_BACKEND` | `dynamodb` | Switches ledger from SQLite; does not migrate existing SQLite records |
+| `DYNAMODB_TABLE` | Table with string partition key `pk`, sort key `sk` | Query/GetItem/PutItem permissions; transactions commit mutations atomically |
+| `POLLY_ENABLED` | `true` | `polly:SynthesizeSpeech`; static English/Hindi Aditi guidance |
+| `LOCATION_ENABLED` | `true` | `geo-routes:CalculateRouteMatrix`; road distances replace straight-line estimates |
+| `AWS_IOT_ENDPOINT` | Account's IoT data ATS hostname | Routes simulator readings through IoT rather than direct local ingestion |
+| `AWS_IOT_TOPIC` | `scrapsetu/bins` | Must match the IoT rule and publish policy |
+| `DATA_DIR` | Writable persistent absolute directory | Local SQLite/evidence/audio/key path; Lambda uses `/tmp/scrapsetu` for audio cache only |
+
+For IoT, merely setting the endpoint is insufficient: deploy the topic rule and Lambda permission. Find the hostname with `aws iot describe-endpoint --endpoint-type iot:Data-ATS`. Local `/fleet/telemetry` is authenticated admin-only; device messages should use separately provisioned IoT certificates and topic-scoped policies. No hardware device provisioning is claimed.
+
+Polly audio is cached after playback. With Polly disabled/unavailable, the app tries device speech and discloses the fallback; voice availability depends on the device. The app's guidance is bilingual; all administrative forms are currently English.
+
+## Cloud production values
+
+The SAM template sets these from created resources; Lambda uses its IAM role, **not static access keys**:
+
+```dotenv
+APP_ENV=production
+AUTH_MODE=cognito
+STORE_BACKEND=dynamodb
+SECRET_KEY=<unique secret, at least 32 characters>
+DYNAMODB_TABLE=<stack LedgerTable output>
+AWS_S3_BUCKET=<stack EvidenceBucket output>
+AWS_REGION=<deployment region>
+FRONTEND_URL=https://<actual frontend origin>
+CORS_ORIGINS=https://<actual frontend origin>
+COGNITO_USER_POOL_ID=<stack UserPoolId output>
+COGNITO_CLIENT_ID=<stack UserPoolClientId output>
+COGNITO_DOMAIN=https://<prefix>.auth.<region>.amazoncognito.com
+BEDROCK_MODEL_ID=amazon.nova-lite-v1:0
+POLLY_ENABLED=true
+LOCATION_ENABLED=true
+AWS_IOT_ENDPOINT=<ATS hostname>
+AWS_IOT_TOPIC=scrapsetu/bins
+DATA_DIR=/tmp/scrapsetu
+```
+
+`FRONTEND_URL` and `COGNITO_DOMAIN` have no trailing slash. Cognito callbacks/logout URLs include the final `/`. Users must belong to **exactly one** application group: `collector`, `vendor`, `recycler`, or `admin`. Create/assign users administratively. Sign-in uses authorization-code PKCE; server validates access-token signature, issuer, expiry, client ID, purpose and group. Tokens expire; sign in again when requested. There is no refresh-token session implementation yet.
+
+## Frontend environment
+
+Copy `frontend/.env.example` to `frontend/.env` only if needed:
+
+```dotenv
+VITE_API_BASE_URL=/api
+```
+
+For deployed Amplify hosting, use the API origin plus `/api`:
+
+```dotenv
+VITE_API_BASE_URL=https://<api-id>.execute-api.<region>.amazonaws.com/api
+```
+
+Rebuild after changing this value. The frontend obtains public Cognito configuration from `/api/v2/config`. All `VITE_*` values become public JavaScript: never use them for secrets.
+
+## Test the complete journey
+
+1. Collector: choose **Try a labeled demo sample → electric motor**, select copper, enter an actual test weight, save. Manual/offline or hazardous entries require an administrator's documented inspection first. Hazard flags persist after review; a hazardous lot also requires the facility's specialist hazardous-material scope (`battery` in this pilot catalog).
+2. Collector: open **Lots**, select the lot, offer it to the demo recycler. Copy the signed QR token.
+3. Recycler: sign in separately, open **Handovers**, paste/scan the token, enter the scale weight and deduction. The named receiver alone can redeem it.
+4. Collector: accept the proposed final weight and price. Recycler then reports payment; collector confirms only after receipt. The system records acknowledgement, not a bank transfer.
+5. Recycler: open the received lot, upload recovery evidence, enter recovered mass and residue summing to the available input. Inspect actual event history and download the JSON receipt.
+6. Impact: demo and recorded quantities are separate. Energy remains **Not estimated** until an administrator adds a documented factor. Factors are snapshotted at recovery time, never applied retrospectively.
+7. Offline: open the built app online once, sign in, switch browser/network offline, save a manual lot, reload, reconnect. Drafts sync with stable operation IDs. Rejected drafts stay visible for retry; expired sessions require sign-in.
+8. Admin: review permits, enter sourced prices, resolve disputes, publish simulated bin readings and plan capacity-limited trips. Route results disclose simulation, straight-line/road basis and vehicle-energy assumptions.
+
+Use separate browser profiles/private windows for roles, or sign out and switch accounts. Browser QA created clearly named test lots in this local database. Do not present demo permits or QA records as real authorized recycling.
+
+## Verification and limits
+
+Run backend tests with `backend/.venv/bin/python -m pytest backend/tests -q`; frontend tests with `npm test --prefix frontend`; build with `npm run build --prefix frontend`. With both servers running, `cd frontend && npx playwright test` tests offline reload/sync and cross-role handover/payment. Browser tests create labeled local QA records. Install Chromium once with `npx playwright install chromium`.
+
+See `infrastructure/README.md` for deployment. Cloud provisioning, live Bedrock/S3/Cognito/Polly/IoT/Location verification, genuine recycler permit checks, reference-price feeds, scientific factor selection, load testing and collector usability testing remain external validation tasks. An `.env` alone cannot supply those resources or evidence. The pilot uses one DynamoDB partition and a global revision lock; redesign access patterns before scaling. Audit records are append-only through this API, not independently tamper-proof. Payments are party-acknowledged; receipts are not regulatory EPR certificates.

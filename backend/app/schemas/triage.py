@@ -1,6 +1,6 @@
 from enum import Enum
-from typing import List, Optional
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 class WasteCategory(str, Enum):
     BIODEGRADABLE = "biodegradable"
@@ -50,12 +50,53 @@ class ClarificationPrompt(BaseModel):
     options: List[ClarificationOption]
 
 class TriageAnalysisRequest(BaseModel):
-    sample_item_id: Optional[str] = None
-    image_base64: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+    sample_item_id: Optional[str] = Field(default=None, max_length=100)
+    image_base64: Optional[str] = Field(default=None, max_length=5_000_100)
     image_url: Optional[str] = None
-    collector_notes: Optional[str] = None
+    collector_notes: Optional[str] = Field(default=None, max_length=2000)
+    reported_hazards: HazardMarkers = Field(default_factory=HazardMarkers)
+
+    @model_validator(mode="after")
+    def validate_source(self):
+        if self.image_url is not None:
+            raise ValueError("Image URLs are not supported. Upload a JPEG, PNG, GIF or WebP image.")
+        if bool(self.sample_item_id) == bool(self.image_base64):
+            raise ValueError("Provide exactly one demo sample ID or uploaded image.")
+        return self
+
+
+class VisionMaterial(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+    name: str = Field(min_length=1, max_length=200)
+    material_type: str = Field(min_length=1, max_length=200)
+    recyclable: bool
+
+
+class VisionResult(BaseModel):
+    """Untrusted model output: required fields, real booleans, no invented defaults."""
+    model_config = ConfigDict(strict=True, extra="forbid")
+    item_title: str = Field(min_length=1, max_length=300)
+    category: Literal["biodegradable", "recyclable", "reusable", "e-waste", "hazardous", "mixed", "unknown"]
+    overall_confidence: float = Field(ge=0, le=1, allow_inf_nan=False)
+    materials_detected: List[VisionMaterial] = Field(max_length=20)
+    contamination_risk: str = Field(min_length=1, max_length=300)
+    recycling_potential: str = Field(min_length=1, max_length=300)
+    biodegradability_rating: str = Field(min_length=1, max_length=300)
+    recommended_pathway: str = Field(min_length=1, max_length=500)
+    is_hazardous: bool
+    battery_damage: bool
+    chemical_leak: bool
+    pressurized_canister: bool
+    exposed_wiring: bool
+    sharp_edges: bool
+    hazard_description: Optional[str] = Field(max_length=1000)
 
 class TriageAnalysisResponse(BaseModel):
+    analysis_source: Literal["demo", "bedrock"] = "demo"
+    model_id: Optional[str] = None
+    request_id: Optional[str] = None
+    latency_ms: Optional[int] = None
     item_title: str
     category: WasteCategory
     overall_confidence: float = Field(ge=0.0, le=1.0)
