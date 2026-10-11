@@ -123,7 +123,6 @@ Resources:
       Runtime: python3.12
       MemorySize: 1024
       Timeout: 28
-      ReservedConcurrentExecutions: 5
       Environment:
         Variables:
           APP_ENV: production
